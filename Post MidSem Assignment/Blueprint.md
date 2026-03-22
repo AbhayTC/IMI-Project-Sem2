@@ -12,6 +12,6 @@
 ├── export_config.pkl             # User configuration state
 ├── inv_results.pkl               # Serialized inverse design results
 ├── master_dataset.pkl            # Serialized main dataset (720 rows)
-├── morgan_fingerprints.pkl       # Serialized fingerprint data
-├── physics_check_report.pkl      # Output confidence metrics
-└── qspr_model.pkl                # Trained Scikit-Learn MLP model
+├── morgan_fingerprints.pkl       
+├── physics_check_report.pkl      
+└── qspr_model.pkl               
