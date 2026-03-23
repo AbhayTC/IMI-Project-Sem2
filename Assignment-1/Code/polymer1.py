@@ -5,7 +5,7 @@ import os
 # =========================
 # SETTINGS
 # =========================
-BASE_DIR = "/home/vishnu-sai/Polymer_Project_Submission"
+BASE_DIR = "/home/vishnu-sai/Assignment-1/Curated_Datasets"
 
 polymer_files = [
     os.path.join(BASE_DIR, "Polyimide_feature_bank.csv"),
