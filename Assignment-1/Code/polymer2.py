@@ -8,7 +8,7 @@ from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 # =========================
 # SETTINGS
 # =========================
-BASE_DIR = "/home/vishnu-sai/Polymer_Project_Submission"
+BASE_DIR = "/home/vishnu-sai/Assignment-1/Curated_Datasets"
 RANDOM_SEED = 42
 TARGET_TG = 350.0
 
