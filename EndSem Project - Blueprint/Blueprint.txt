@@ -1,0 +1,74 @@
+=========================================
+INVERSE DESIGN MVP BLUEPRINT (FROM SCRATCH)
+=========================================
+
+PHASE 1: SYNTHETIC DATA & ENVIRONMENT PREP
+-----------------------------------------
+[ ] 1. Install required libraries via terminal:
+       pip install rdkit scikit-learn pandas numpy streamlit
+[ ] 2. Create a file named: generate_training_data.py
+[ ] 3. Build the logic to generate synthetic training data:
+       - Base Structures: Define 3-4 starting polymer repeating units (e.g., PEEK, Polyimide).
+       - Mutation Loop: Randomly apply chemical mutations (adding Fluorine, Chlorine, Methyl groups) to the base structures to create variety. Check for chemical validity and discard duplicates.
+       - Rule-Based Target Calculation ("Fake Physics"): 
+           * Calculate basic structural properties for each valid molecule (Molecular Weight, Number of Rings, Number of Halogens).
+           * Set Tg: Base value + (increases with rings/weight) - (decreases with halogens) + random noise.
+           * Set Dielectric: Base value - (decreases significantly with halogens) + random noise.
+           * Set Mass Loss: Base value - (improves with rings and halogens) + random noise.
+[ ] 4. Output: Run the script until you generate a CSV with 1,000 diverse samples containing the SMILES and the three calculated targets.
+
+PHASE 2: THE GENERATION ENGINE (USER CANDIDATES)
+-----------------------------------------
+[ ] 1. Create a file named: mutation_generator.py
+[ ] 2. Build the RDKit mutation logic:
+       - Input: Starting polymer SMILES (provided by the user).
+       - Action: Apply chemical mutations to valid sites on the input backbone.
+[ ] 3. Apply the Tanimoto Filter:
+       - Calculate Morgan Fingerprints for the input and all generated candidates.
+       - STRICT RULE: Morgan Fingerprints are used HERE for similarity checking only.
+       - Keep only candidates with a Tanimoto score between 0.85 and 0.98.
+[ ] 4. Target Output: Run the loop until you successfully output a dataset containing exactly 720 valid, filtered candidate SMILES.
+
+PHASE 3: FEATURE EXTRACTION (240 FEATURES)
+-----------------------------------------
+[ ] 1. Create a file named: feature_extractor.py
+[ ] 2. Build the extraction pipeline for both your training data AND your 720 candidates.
+[ ] 3. Compile exactly 240 features per polymer by combining:
+       - Structural features (RDKit 1D/2D descriptors like MolWt, NumRings, etc.)
+       - Implicit embeddings (polyBERT vector subset)
+       - Physics-based features (calculated properties)
+[ ] 4. STRICT RULE: Ensure Morgan Fingerprints are NOT included in this final 240-feature vector. 
+[ ] 5. Output: A final dataframe where every SMILES string is represented by exactly 240 feature columns.
+
+PHASE 4: THE EVALUATOR ENGINE (MACHINE LEARNING)
+-----------------------------------------
+[ ] 1. Create a file named: train_surrogate.py
+[ ] 2. Load your training dataset from Phase 1 and run it through Phase 3 to get the 240 features.
+[ ] 3. Train the ML Model:
+       - Set X = The 240 extracted features.
+       - Set Y = The three target properties (Tg, Dielectric, Mass Loss).
+       - Initialize and fit a RandomForestRegressor from sklearn.ensemble.
+[ ] 4. Save the trained model using the pickle library as "surrogate_model.pkl".
+
+PHASE 5: THE MASTER PIPELINE
+-----------------------------------------
+[ ] 1. Create a file named: run_inverse_design.py
+[ ] 2. Build the logic flow:
+       - Ask user for input: input("Enter Base Polymer SMILES: ")
+       - Call mutation_generator.py to create 720 valid candidates.
+       - Call feature_extractor.py to convert those 720 SMILES into 240 features each.
+       - Load surrogate_model.pkl and predict properties for all 720 candidates.
+       - Sort the results to find the optimal balance (e.g., lowest Dielectric Constant).
+       - Print the winning SMILES string and the before/after property differences.
+
+PHASE 6: THE PRESENTATION LAYER (USER INTERFACE)
+-----------------------------------------
+[ ] 1. Create a file named: app.py
+[ ] 2. Import Streamlit (import streamlit as st) and your pipeline function from Phase 5.
+[ ] 3. Build the UI:
+       - Text input box for the starting SMILES string.
+       - A "Run Optimization" button.
+[ ] 4. Display the results:
+       - Use st.image() to show RDKit 2D drawings of the input and output polymers side-by-side.
+       - Use st.dataframe() to show a clean table comparing the Tg, Dielectric, and Mass Loss deltas.
+[ ] 5. Test the app: Run "streamlit run app.py" in your terminal.

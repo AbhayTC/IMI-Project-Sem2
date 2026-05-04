@@ -1,0 +1,1002 @@
+================================================================================
+  POLYMER INVERSE DESIGN AI — COMPLETE BUILD BLUEPRINT
+  Target Machine : MacBook Air M2, 8GB RAM, 256GB SSD
+  Deployment     : Localhost (Flask) → convertible to web app later
+  UI Style       : Terminal / hacker aesthetic
+  Path           : A (per-query dataset generation + training)
+================================================================================
+
+NOTE ON polyBERT
+  This system uses SIMULATED polyBERT-style embeddings (seeded deterministic
+  vectors derived from the SMILES hash) in place of the real kuelumbus/polyBERT
+  transformer model. This is a deliberate choice to keep the system lightweight
+  on an 8GB RAM machine. A small disclaimer is displayed in the bottom-right
+  corner of the UI: "polyBERT embeddings are simulated (hash-anchored vectors)".
+  The real polyBERT can be swapped in later by replacing the embedding function
+  in step2_feature_extraction/implicit_embeddings.py with a Hugging Face
+  inference call, without changing anything else in the pipeline.
+
+NOTE ON OUTPUT SMILES GENERATION (Q8 — PENDING)
+  Section 7 of this document is a placeholder. The candidate pool generation
+  and SMILES output logic will be defined in a follow-up specification.
+  The interface contract is fixed:
+    Input  : user_smiles (str), property_thresholds (dict)
+    Output : list of candidate_smiles (list[str]), each with predicted
+             properties already attached
+  Any external generative model (VAE, REINVENT, STONED-SELFIES, Chemformer,
+  or a retrieval database) can be dropped into this section without changing
+  anything else in the pipeline. The rest of the system only consumes the
+  output list — it does not care how the candidates were produced.
+
+================================================================================
+  SECTION 0 — SYSTEM OVERVIEW
+================================================================================
+
+WHAT IT DOES
+  The user enters a SMILES string for a polymer. The system:
+    1. Extracts ~400 features from that SMILES (RDKit + physics-derived +
+       simulated polyBERT). Morgan fingerprints are extracted separately
+       and used only in the inverse design search step.
+    2. Generates 200 synthetic samples by adding controlled variance to the
+       base features. Tanimoto similarity between samples is kept in the
+       range 0.85–0.98.
+    3. Computes five target properties for each sample using physics-grounded
+       equations: Tg, Dk, Young's modulus, outgassing TML, radiation dose.
+    4. Trains a multi-output Random Forest on those 200 samples.
+    5. Uses Latin Hypercube Sampling (LHS) inverse design to find candidate
+       polymers satisfying all five property thresholds.
+    6. Returns two recommended output polymers (highest composite score +
+       most structurally similar to input) and displays a property comparison
+       table in the terminal-style UI.
+
+PROPERTY THRESHOLDS (output polymer must satisfy ALL five)
+  Glass transition temperature  Tg  > 280 °C
+  Dielectric constant           Dk  < 3.50 (at 1 GHz)
+  Young's modulus               E   > 2.0 GPa
+  Outgassing TML                TML < 1.0 %
+  Radiation dose tolerance      Rad > 20 MGy
+
+OUTPUT TABLE FORMAT (shown in the UI)
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │ Recommendation                                                           │
+  ├───────────────────────────────────┬──────────────────────────────────────┤
+  │ Selection reason                  │ SMILES                               │
+  ├───────────────────────────────────┼──────────────────────────────────────┤
+  │ Highest composite score           │ <smiles_A>                           │
+  │ Most similar to your input        │ <smiles_B>                           │
+  └───────────────────────────────────┴──────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │ Property comparison                                                      │
+  ├──────────────────────┬────────────┬─────────────────┬────────────────────┤
+  │ Property             │ Your input │ Best score      │ Most similar       │
+  ├──────────────────────┼────────────┼─────────────────┼────────────────────┤
+  │ Tg (°C)              │ ---        │ ---             │ ---                │
+  │ Dielectric const.    │ ---        │ ---             │ ---                │
+  │ Young's modulus GPa  │ ---        │ ---             │ ---                │
+  │ Outgassing TML %     │ ---        │ ---             │ ---                │
+  │ Radiation dose MGy   │ ---        │ ---             │ ---                │
+  └──────────────────────┴────────────┴─────────────────┴────────────────────┘
+
+================================================================================
+  SECTION 1 — FOLDER STRUCTURE
+================================================================================
+
+polymer_inverse_design/
+│
+├── app.py                              # Flask entry point — run this to start
+├── requirements.txt                    # All Python dependencies
+├── config.py                           # Thresholds, constants, hyperparameters
+│
+├── step1_input/
+│   └── validate_smiles.py              # Sanitise and canonicalise user SMILES
+│
+├── step2_feature_extraction/
+│   ├── rdkit_descriptors.py            # ~200 RDKit 2D descriptors
+│   ├── physics_features.py             # ~100 physics-derived features
+│   ├── implicit_embeddings.py          # ~100 simulated polyBERT dims (PCA-ready)
+│   └── morgan_fingerprints.py          # Morgan FP — SEPARATE, used only in step 6
+│
+├── step3_dataset_generation/
+│   ├── variance_injection.py           # Add controlled variance to base features
+│   └── tanimoto_checker.py             # Verify pairwise T in range 0.85–0.98
+│
+├── step4_target_computation/
+│   └── property_equations.py           # Physics equations → Tg, Dk, E, TML, Rad
+│
+├── step5_model/
+│   ├── train.py                        # Train multi-output Random Forest
+│   └── predict.py                      # Predict properties for new feature vectors
+│
+├── step6_inverse_design/
+│   ├── lhs_sampler.py                  # Latin Hypercube Sampling of design space
+│   ├── feasibility_filter.py           # Apply five property thresholds
+│   └── candidate_ranker.py             # Composite score + structural similarity rank
+│
+├── step7_output_smiles/                # [PENDING — Q8 specification]
+│   └── PLACEHOLDER.txt                 # See Section 7 of this document
+│
+├── step8_ui/
+│   ├── templates/
+│   │   └── index.html                  # Terminal-style HTML UI
+│   └── static/
+│       ├── style.css                   # Green-on-black terminal aesthetic
+│       └── script.js                   # Async form submit, table rendering
+│
+└── tests/
+    ├── test_features.py
+    ├── test_tanimoto.py
+    └── test_pipeline_end_to_end.py
+
+================================================================================
+  SECTION 2 — DEPENDENCIES & ENVIRONMENT SETUP
+================================================================================
+
+PYTHON VERSION
+  Python 3.10 or 3.11 recommended. Do NOT use 3.12 — some RDKit builds lag.
+  On M2 Mac, install via pyenv or Conda (Miniforge recommended for ARM).
+
+INSTALLATION STEPS
+  Step 1 — Install Miniforge (ARM-native Conda for M2):
+    Download from: https://github.com/conda-forge/miniforge
+    Run installer, then:
+      conda create -n polymer_env python=3.11
+      conda activate polymer_env
+
+  Step 2 — Install RDKit via conda (much easier than pip on M2):
+      conda install -c conda-forge rdkit
+
+  Step 3 — Install remaining packages via pip:
+      pip install flask numpy pandas scikit-learn scipy
+      pip install torch                   # CPU-only, ~200MB, for embedding utils
+      pip install selfies                 # SELFIES string manipulation
+      pip install stoned-selfies          # For Step 7 candidate generation (future)
+      pip install plotly                  # Optional: property radar charts in UI
+
+REQUIREMENTS.TXT (generated content)
+  flask>=3.0
+  numpy>=1.26
+  pandas>=2.1
+  scikit-learn>=1.4
+  scipy>=1.12
+  rdkit                  # installed via conda, listed for reference
+  selfies>=2.1
+  torch>=2.2             # CPU only — do not install torchvision
+  plotly>=5.18
+
+HARDWARE NOTES (M2 MacBook Air 8GB)
+  - RDKit descriptor extraction for 200 samples: ~2–5 seconds
+  - Random Forest training (120 trees, 200 samples, 400 features): ~3–8 seconds
+  - LHS inverse design (5000 candidates): ~2–4 seconds
+  - Total per-query time estimate: 15–40 seconds
+  - Peak RAM usage estimate: ~1.5–2.5 GB (well within 8GB)
+  - Do NOT use MPS (Apple GPU) acceleration — the model is too small to benefit
+    and MPS overhead would slow it down. Keep everything on CPU.
+
+================================================================================
+  SECTION 3 — STEP 1: INPUT VALIDATION
+================================================================================
+
+FILE: step1_input/validate_smiles.py
+
+PURPOSE
+  Accept the raw SMILES string from the user and return a clean, canonical
+  SMILES. Reject invalid inputs early with a clear error message before any
+  expensive computation begins.
+
+LOGIC
+  1. Strip whitespace from the input string.
+  2. Attempt to parse with RDKit: mol = Chem.MolFromSmiles(smiles)
+  3. If mol is None → return error: "Invalid SMILES — RDKit could not parse
+     this string. Please check your input."
+  4. Canonicalise: canonical_smiles = Chem.MolToSmiles(mol)
+  5. Check molecular weight > 100 Da — very small molecules are not polymers.
+     If MW < 100 → return warning: "This SMILES appears to be a small molecule,
+     not a polymer repeat unit. Results may be unreliable."
+  6. Return the canonical SMILES string and the RDKit mol object for downstream
+     use.
+
+ERROR STATES TO HANDLE
+  - Empty string submitted
+  - String contains characters outside SMILES alphabet
+  - Valid SMILES but disconnected fragments (contains ".")
+  - Molecule has no rings and no heteroatoms (likely not a useful polymer)
+
+================================================================================
+  SECTION 4 — STEP 2: FEATURE EXTRACTION (~400 features)
+================================================================================
+
+OVERVIEW OF FEATURE TIERS
+  Tier 1 — RDKit 2D descriptors       : ~200 features
+  Tier 2 — Physics-derived features   : ~100 features
+  Tier 3 — Simulated polyBERT dims    : ~100 features (PCA-reduced from 600)
+  Morgan fingerprints                 : SEPARATE — 2048 bits, used in Step 6 only
+  ─────────────────────────────────────────────────────
+  Total fed to the model              : ~400 features
+
+────────────────────────────────────────
+4A — RDKit 2D DESCRIPTORS (~200 features)
+FILE: step2_feature_extraction/rdkit_descriptors.py
+────────────────────────────────────────
+
+Use rdkit.Chem.Descriptors and rdkit.Chem.rdMolDescriptors to compute the
+full descriptor list. Key descriptors to include:
+
+  Molecular weight group:
+    MolWt, HeavyAtomMolWt, ExactMolWt, NumHeavyAtoms
+
+  Topology group:
+    NumRotatableBonds, NumRings, NumAromaticRings, NumAliphaticRings,
+    RingCount, HallKierAlpha, Kappa1, Kappa2, Kappa3,
+    Chi0, Chi1, Chi2n, Chi3n, Chi0v, Chi1v
+
+  Electronic/polar group:
+    FractionCSP3, NumHDonors, NumHAcceptors, TPSA,
+    MolLogP, MolMR, LabuteASA
+
+  VSA descriptors (all bins):
+    PEOE_VSA1 through PEOE_VSA14
+    SMR_VSA1 through SMR_VSA10
+    SlogP_VSA1 through SlogP_VSA12
+
+  Electronic state descriptors:
+    NumValenceElectrons, NumRadicalElectrons, MaxAbsEStateIndex,
+    MinAbsEStateIndex, MaxEStateIndex, MinEStateIndex
+
+  Fragment counts (fr_* descriptors — full list from RDKit):
+    fr_Al_COO, fr_Al_OH, fr_Al_OH_noTert, fr_ArN, fr_Ar_COO,
+    fr_Ar_N, fr_Ar_NH, fr_Ar_OH, fr_COO, fr_COO2, fr_C_O,
+    fr_C_O_noCOO, fr_C_S, fr_HOCCN, fr_Imine, fr_NH0, fr_NH1,
+    fr_NH2, fr_N_O, fr_Ndealkyl, fr_Para_hydroxyl, fr_aniline,
+    fr_aryl_methyl, fr_azide, fr_azo, fr_barbitur, fr_benzene,
+    fr_benzodiazepine, fr_bicyclic, fr_diazo, fr_dihydropyridine,
+    fr_epoxide, fr_ester, fr_ether, fr_furan, fr_guanido,
+    fr_halogen, fr_hdrzine, fr_hdrzone, fr_imidazole, fr_imide,
+    fr_isocyan, fr_isothiocyan, fr_ketone, fr_ketone_Topliss,
+    fr_lactam, fr_lactone, fr_methoxy, fr_morpholine, fr_nitrile,
+    fr_nitro, fr_nitro_arom, fr_nitro_arom_nonortho, fr_nitroso,
+    fr_oxazole, fr_oxime, fr_para_hydroxyl, fr_phenol,
+    fr_phenol_noOrthoHbond, fr_phos_acid, fr_phos_ester,
+    fr_piperdine, fr_piperzine, fr_priamide, fr_prisulfonamd,
+    fr_pyridine, fr_quatN, fr_sulfide, fr_sulfonamd, fr_sulfone,
+    fr_term_acetylene, fr_tetrazole, fr_thiazole, fr_thiocyan,
+    fr_thiophene, fr_unbrch_alkane, fr_urea, fr_amide
+
+  Quantum/shape descriptors:
+    Ipc, BalabanJ, BertzCT, HallKierAlpha
+
+IMPLEMENTATION NOTE
+  Use rdkit.Chem.Descriptors.descList to iterate over all available
+  descriptors automatically. Wrap each call in a try/except to handle
+  cases where a descriptor is undefined for a given structure (return 0.0
+  as default). This future-proofs the code against RDKit version differences.
+
+  CODE SKETCH:
+    from rdkit.Chem import Descriptors
+    desc_list = [(name, fn) for name, fn in Descriptors.descList]
+    features = {}
+    for name, fn in desc_list:
+        try:
+            features[name] = fn(mol)
+        except:
+            features[name] = 0.0
+
+────────────────────────────────────────
+4B — PHYSICS-DERIVED FEATURES (~100 features)
+FILE: step2_feature_extraction/physics_features.py
+────────────────────────────────────────
+
+These features are computed from the RDKit descriptors via physical/chemical
+equations. They encode polymer-specific morphological and thermodynamic
+properties that RDKit descriptors alone do not capture.
+
+FEATURES TO COMPUTE (with their derivation logic):
+
+  Crystallinity group:
+    DegreeOfCrystallinity   = f(NumAromaticRings, FractionCSP3)
+                              Higher aromaticity → higher crystallinity tendency
+    CrystallinePhaseContent = DegreeOfCrystallinity
+    AmorphousPhaseContent   = 1.0 - DegreeOfCrystallinity
+    MicrostructureOrder     = 0.5 * DegreeOfCrystallinity + 0.3 * (1-FractionCSP3)
+
+  Chain geometry group:
+    ChainRigidityIndex      = (NumAromaticRings * 0.15 + RingCount * 0.05)
+                              clamped to [0, 1]
+    PersistenceLength_nm    = 1.5 + 8.0 * ChainRigidityIndex
+    CharacteristicRatio     = 5.0 + 5.0 * ChainRigidityIndex
+    ContourLengthPerUnit_nm = MolWt / 14.0 * 0.126
+    ChainFlexibilityParam   = 1.0 - ChainRigidityIndex
+
+  Free volume group:
+    FreeVolumeFraction      = 0.025 + 0.075 * FractionCSP3
+                            - 0.020 * DegreeOfCrystallinity
+    SegmentalMobility       = FreeVolumeFraction * (1 - ChainRigidityIndex)
+
+  Thermal group:
+    ThermalExpansionCoeff   = (4.0e-5 + 2.0e-5 * FreeVolumeFraction) in K^-1
+    HeatCapacity_Cp         = 1.0 + 0.5 * FractionCSP3 - 0.2 * DegreeOfCrystallinity
+    ThermalDiffusivity      = 1.5e-7 + 1.0e-7 * ChainRigidityIndex
+
+  Dielectric group:
+    DielectricPolarizability     = 8.0 + 0.5 * NumHeavyAtoms - 2.0 * NumHDonors
+    ElectronicPolarizability     = DielectricPolarizability * 0.90
+    IonicPolarizability          = DielectricPolarizability * 0.05
+    OrientationalPolarizability  = DielectricPolarizability * 0.05
+    DipoleMomentRepeat           = TPSA / 30.0
+    PermittivityRealPart         = 2.0 + 0.05 * DielectricPolarizability
+    PermittivityImaginaryPart    = PermittivityRealPart * 0.02
+    TanDeltaDielectric           = PermittivityImaginaryPart / PermittivityRealPart
+
+  Crosslinking / molecular weight group:
+    CrosslinkingDensity     = 0.001 + 0.002 * (fr_imide + fr_amide + fr_ester)
+    EntanglementMolWt       = max(1000.0, 20000.0 / (1 + CrosslinkingDensity * 100))
+    Mw_kDa                  = MolWt * 200 / 1000          # repeat unit × ~200
+    Mn_kDa                  = Mw_kDa / 2.0
+    PolyDispersityIndex     = 2.0
+    ZAverageMolWt           = Mw_kDa * 1.5
+    ViscosityAverageMolWt   = Mw_kDa * 0.9
+    NumberAverageDPn        = Mn_kDa * 1000 / MolWt
+
+  Morphology / microstructure group:
+    LamellaeThickness_nm    = 10.0 + 20.0 * DegreeOfCrystallinity
+    SpheruliteRadius_um     = 5.0 + 30.0 * DegreeOfCrystallinity
+    CrystalThickness_nm     = LamellaeThickness_nm * 0.8
+    TieChainsPerArea        = 1e14 * (1 - AmorphousPhaseContent)
+    InterfacialThickness_nm = 3.0 + 2.0 * FreeVolumeFraction * 10
+    GlassyModulus_GPa       = 2.0 + 3.0 * ChainRigidityIndex
+                            + 1.0 * DegreeOfCrystallinity
+
+  Mechanical group:
+    TensileStrength_MPa     = 50.0 + 200.0 * ChainRigidityIndex
+                            + 100.0 * DegreeOfCrystallinity
+    ElongationBreak_pct     = 50.0 - 30.0 * DegreeOfCrystallinity
+                            + 20.0 * FreeVolumeFraction
+    CurieWeissConstant      = 100.0 * DegreeOfCrystallinity
+    PolymerDensity_g_cm3    = 1.0 + 0.5 * DegreeOfCrystallinity
+                            + 0.3 * (1 - FractionCSP3)
+
+IMPLEMENTATION NOTE
+  Every physics feature must be clipped to a physically valid range after
+  computation. Example: DegreeOfCrystallinity must stay in [0.0, 1.0],
+  GlassyModulus must be > 0, etc. Define a CLIP_RANGES dictionary in
+  config.py and apply it after computing all features.
+
+────────────────────────────────────────
+4C — SIMULATED polyBERT EMBEDDINGS (~100 features)
+FILE: step2_feature_extraction/implicit_embeddings.py
+────────────────────────────────────────
+
+PURPOSE
+  Generate a 600-dimensional embedding vector anchored to the canonical
+  SMILES string, without loading the real polyBERT model. The vector is
+  deterministic — the same SMILES always produces the same embedding.
+  PCA reduces this to 100 dimensions before it is added to the feature set.
+
+GENERATION METHOD
+  1. Compute an MD5 hash of the canonical SMILES string.
+  2. Use the integer value of the hash as a numpy RandomState seed.
+  3. Sample a 600-dim vector from a standard normal distribution using
+     that seed.
+  4. Apply SMILES-aware bias to specific dimension blocks:
+       dims 1–150   : aromatic_bias  = (NumAromaticRings / 10.0) - 0.5
+       dims 151–300 : polar_bias     = (TPSA / 100.0) - 0.5
+       dims 301–450 : backbone_bias  = ChainRigidityIndex - 0.5
+       dims 451–600 : flexibility    = FreeVolumeFraction * 2 - 0.5
+     Add each bias to the corresponding block of the sampled vector.
+  5. Clip the entire vector to [-1.5, 1.5].
+  6. Apply PCA (sklearn.decomposition.PCA, n_components=100) to reduce
+     to 100 dimensions. The PCA is fit across the 200 generated samples
+     (see Step 3), not just the single base vector.
+
+NAMING CONVENTION
+  After PCA, name the columns: polyBERT_sim_dim_001 through polyBERT_sim_dim_100
+
+DISCLAIMER TEXT (display in UI bottom-right corner)
+  "[ polyBERT: simulated embeddings ]"
+
+────────────────────────────────────────
+4D — MORGAN FINGERPRINTS (SEPARATE — NOT IN THE 400)
+FILE: step2_feature_extraction/morgan_fingerprints.py
+────────────────────────────────────────
+
+  Use rdkit.Chem.rdMolDescriptors.GetMorganFingerprintAsBitVect
+  Parameters: radius=2, nBits=2048
+  Output: a 2048-bit binary vector
+  Storage: saved as a separate numpy array, not merged into the 400-feature
+           DataFrame. Used only in Step 6 (structural similarity ranking).
+
+  TANIMOTO SIMILARITY between two Morgan FP vectors:
+    from rdkit.DataStructs import TanimotoSimilarity
+    T = TanimotoSimilarity(fp_a, fp_b)
+
+================================================================================
+  SECTION 5 — STEP 3: DATASET GENERATION (200 samples, T in 0.85–0.98)
+================================================================================
+
+FILE: step3_dataset_generation/variance_injection.py
+FILE: step3_dataset_generation/tanimoto_checker.py
+
+OVERVIEW
+  Starting from the single base feature vector extracted in Step 2, generate
+  200 slightly varied feature vectors. Each vector represents a hypothetical
+  polymer that is structurally similar to the input but chemically distinct
+  enough to provide useful training variance.
+
+VARIANCE INJECTION STRATEGY
+  For each of the 200 samples and each of the ~400 features:
+
+  1. Determine the feature type:
+       - Discrete integer count (e.g. NumAromaticRings, fr_ether):
+           Perturb by ±0 or ±1 using a seeded Bernoulli draw (p=0.15).
+           Always clip to [0, max_observed].
+       - Continuous non-negative (e.g. MolWt, TPSA, ThermalDiffusivity):
+           Multiply by a lognormal factor: val * exp(Normal(0, sigma))
+           where sigma = 0.03 for most features.
+       - Bounded [0,1] (e.g. DegreeOfCrystallinity, FreeVolumeFraction):
+           Add Normal(0, 0.02) then clip to [0.0, 1.0].
+       - Latent / embedding dims (polyBERT_sim_dim_*):
+           Add Normal(0, 0.05) then clip to [-1.5, 1.5].
+
+  2. Each sample uses a unique seed derived as:
+       seed = hash(canonical_smiles + str(sample_index)) % (2**32)
+     This makes generation fully reproducible.
+
+  3. After generating all 200 samples, enforce physical self-consistency:
+       AmorphousPhaseContent   = 1.0 - DegreeOfCrystallinity
+       CrystallinePhaseContent = DegreeOfCrystallinity
+       All other derived physics features should be re-computed from the
+       perturbed base RDKit descriptors (call physics_features.py again
+       on the perturbed values) rather than independently perturbed.
+       This prevents physically contradictory feature combinations.
+
+TANIMOTO SIMILARITY CHECK
+FILE: step3_dataset_generation/tanimoto_checker.py
+
+  The Tanimoto target range is 0.85–0.98 for pairwise similarity among
+  the 200 samples. This is measured on NORMALISED continuous features,
+  not on Morgan fingerprints (which are binary and measure structural
+  identity, not feature-space similarity).
+
+  ALGORITHM:
+  1. Normalise the 400-feature matrix to [0, 1] per column (min-max scaling).
+  2. Compute pairwise continuous Tanimoto:
+       T(A, B) = dot(A, B) / (|A|^2 + |B|^2 - dot(A, B))
+  3. Compute mean and percentile distribution of all pairwise scores.
+  4. If mean T < 0.85: sigma values in variance injection are too large —
+     reduce them by 20% and regenerate.
+  5. If mean T > 0.98: sigma values are too small — increase by 20% and
+     regenerate.
+  6. Iterate until mean T is in [0.85, 0.98] and no single pair exceeds 0.995
+     (which would indicate near-duplicate samples).
+  7. Report final mean T and distribution in the terminal UI logs.
+
+  STARTING SIGMA RECOMMENDATIONS (tuned for ~200-feature polymer datasets):
+    Continuous features  : sigma = 0.03
+    Bounded [0,1]        : sigma = 0.02
+    Latent dims          : sigma = 0.05
+    Integer counts       : Bernoulli p = 0.15
+
+================================================================================
+  SECTION 6 — STEP 4: TARGET PROPERTY COMPUTATION
+================================================================================
+
+FILE: step4_target_computation/property_equations.py
+
+PURPOSE
+  For each of the 200 generated samples, compute the five target properties
+  using explicit physics-grounded equations in delta form. "Delta form" means
+  each feature is expressed as (feature_value - feature_mean), so the intercept
+  equals the expected property at the mean of all features. This makes the
+  model's task cleaner and the coefficients more interpretable.
+
+IMPORTANT: Use a single seeded RNG (numpy.random.RandomState(seed=123)) for
+all noise terms. Do NOT use five separate RNGs — correlated noise is more
+physically realistic and produces better R² scores.
+
+─────────────────────────────────
+6A — GLASS TRANSITION TEMPERATURE (Tg, in °C)
+─────────────────────────────────
+
+  Reference Tg base at feature means is computed as:
+    Tg_base = 200 + 280 * mean(ChainRigidityIndex)
+                  + 18  * mean(NumAromaticRings)
+                  - 600 * mean(FreeVolumeFraction)
+                  + 80  * mean(DegreeOfCrystallinity)
+                  + 1500 * mean(CrosslinkingDensity)
+
+  Per-sample equation (delta form):
+    Tg = Tg_base
+       + 280.0  * (ChainRigidityIndex   - mean_ChainRigidityIndex)
+       + 18.0   * (NumAromaticRings     - mean_NumAromaticRings)
+       - 600.0  * (FreeVolumeFraction   - mean_FreeVolumeFraction)
+       + 80.0   * (DegreeOfCrystallinity- mean_DegreeOfCrystallinity)
+       + 1500.0 * (CrosslinkingDensity  - mean_CrosslinkingDensity)
+       + 10.0   * latent_backbone_term
+       + 4.0    * structural_term
+       + Normal(0, 2.5)    ← residual noise
+
+    where latent_backbone_term =
+      0.35 * polyBERT_sim_dim_001 + 0.25 * polyBERT_sim_dim_002
+    - 0.20 * polyBERT_sim_dim_031 - 0.15 * polyBERT_sim_dim_032
+
+    and structural_term =
+      0.30 * (fr_ether  - mean_fr_ether)
+    + 0.20 * (fr_imide  - mean_fr_imide)
+    + 0.10 * (NumAromaticRings - mean_NumAromaticRings)
+
+  Clip final Tg to [50, 800] °C.
+
+─────────────────────────────────
+6B — DIELECTRIC CONSTANT (Dk, dimensionless, at 1 GHz)
+─────────────────────────────────
+
+  Dk = Dk_base
+     + 0.065  * (DielectricPolarizability - mean_DielectricPolarizability)
+     - 8.0    * (FreeVolumeFraction       - mean_FreeVolumeFraction)
+     + 2.0    * (DegreeOfCrystallinity    - mean_DegreeOfCrystallinity)
+     - 1.0    * (FractionCSP3             - mean_FractionCSP3)
+     - 0.015  * latent_backbone_term
+     + Normal(0, 0.03)
+
+  where Dk_base = 1.6 + 0.065 * mean(DielectricPolarizability)
+                      - 8.0   * mean(FreeVolumeFraction)
+                      + 2.0   * mean(DegreeOfCrystallinity)
+
+  Apply numpy.maximum(Dk, 1.5) — dielectric constant cannot be below 1.
+
+─────────────────────────────────
+6C — YOUNG'S MODULUS (E, in GPa)
+─────────────────────────────────
+
+  E = E_base
+    + 1.5   * (ChainRigidityIndex    - mean_ChainRigidityIndex)
+    + 0.5   * (DegreeOfCrystallinity - mean_DegreeOfCrystallinity)
+    - 3.0   * (FreeVolumeFraction    - mean_FreeVolumeFraction)
+    + 100.0 * (CrosslinkingDensity   - mean_CrosslinkingDensity)
+    + 0.05  * latent_backbone_term
+    + Normal(0, 0.08)
+
+  Apply numpy.maximum(E, 0.01).
+
+─────────────────────────────────
+6D — OUTGASSING TOTAL MASS LOSS (TML, in %)
+─────────────────────────────────
+
+  TML = TML_base
+      + 1.2  * (FreeVolumeFraction    - mean_FreeVolumeFraction)
+      + 0.025 * (DipoleMomentRepeat   - mean_DipoleMomentRepeat)
+      - 0.30 * (DegreeOfCrystallinity - mean_DegreeOfCrystallinity)
+      + Normal(0, 0.015)
+
+  Apply numpy.maximum(TML, 0.001).
+
+─────────────────────────────────
+6E — RADIATION DOSE TOLERANCE (Rad, in MGy)
+─────────────────────────────────
+
+  Rad = Rad_base
+      + 8.0    * (NumAromaticRings    - mean_NumAromaticRings)
+      + 1000.0 * (CrosslinkingDensity - mean_CrosslinkingDensity)
+      - 50.0   * (FreeVolumeFraction  - mean_FreeVolumeFraction)
+      + 0.04   * latent_backbone_term
+      + Normal(0, 1.0)
+
+  Apply numpy.maximum(Rad, 0.01).
+
+================================================================================
+  SECTION 7 — STEP 5: MODEL TRAINING
+================================================================================
+
+FILE: step5_model/train.py
+FILE: step5_model/predict.py
+
+MODEL CHOICE: Multi-output Random Forest
+  sklearn.ensemble.RandomForestRegressor wrapped in
+  sklearn.multioutput.MultiOutputRegressor
+
+HYPERPARAMETERS
+  n_estimators : 120
+  max_depth    : 10
+  random_state : 42
+  n_jobs       : -1   (use all CPU cores — M2 has 8, this helps)
+
+FEATURE PREPROCESSING
+  StandardScaler applied to all 400 features before training.
+  Scaler is fit on the 200-sample training set and saved as scaler.pkl
+  for use at inference time.
+
+TRAIN / TEST SPLIT
+  80% train (160 samples), 20% test (40 samples)
+  random_state=42 for reproducibility
+
+TARGETS
+  The model is trained on all five targets simultaneously:
+  [Tg_degC, Dk_1GHz, YoungModulus_GPa, Outgassing_TML_pct, RadiationDose_MGy]
+
+EVALUATION METRICS (print to terminal after training)
+  R² score per target
+  MAE per target
+  Average R² across all five targets
+  Confidence label: HIGH (avg R² > 0.85), MEDIUM (≥ 0.70), LOW (< 0.70)
+
+SAVING
+  Save the trained model as step5_model/trained_model.pkl
+  Save the scaler    as step5_model/scaler.pkl
+  Both are overwritten on every new query (Path A behaviour).
+
+================================================================================
+  SECTION 8 — STEP 6: INVERSE DESIGN
+================================================================================
+
+FILE: step6_inverse_design/lhs_sampler.py
+FILE: step6_inverse_design/feasibility_filter.py
+FILE: step6_inverse_design/candidate_ranker.py
+
+────────────────────────────────────────
+8A — LATIN HYPERCUBE SAMPLING
+FILE: step6_inverse_design/lhs_sampler.py
+────────────────────────────────────────
+
+  Generate 5000 candidate feature vectors by varying the four most
+  influential physics features across their realistic design space.
+
+  DESIGN VARIABLES AND BOUNDS:
+    FreeVolumeFraction    : [0.04, 0.22]
+    DegreeOfCrystallinity : [0.10, 0.80]
+    ChainRigidityIndex    : [0.50, 1.00]
+    DielectricPolarizability : [15.0, 30.0]
+
+  METHOD:
+    from scipy.stats import qmc
+    sampler = qmc.LatinHypercube(d=4, seed=42)
+    samples = qmc.scale(sampler.random(n=5000), lo, hi)
+
+  CONSTRUCTION OF FULL FEATURE VECTORS:
+    Start from the mean of the 200 training samples for all 400 features.
+    Tile this mean vector 5000 times.
+    Replace the four design variable columns with the LHS samples.
+    Enforce complement constraints:
+      AmorphousPhaseContent   = 1.0 - DegreeOfCrystallinity
+      CrystallinePhaseContent = DegreeOfCrystallinity
+    Re-derive dependent physics features from the updated design variables.
+
+────────────────────────────────────────
+8B — FEASIBILITY FILTER
+FILE: step6_inverse_design/feasibility_filter.py
+────────────────────────────────────────
+
+  Pass all 5000 candidate vectors through the trained model (predict.py).
+  Apply the five thresholds:
+
+    feasible = (
+        (preds[:, 0] > 280.0)  &   # Tg > 280 °C
+        (preds[:, 1] < 3.50)   &   # Dk < 3.50
+        (preds[:, 2] > 2.0)    &   # Young's modulus > 2.0 GPa
+        (preds[:, 3] < 1.0)    &   # TML < 1.0 %
+        (preds[:, 4] > 20.0)       # Rad > 20 MGy
+    )
+
+  If n_feasible == 0:
+    Return a clear message to the user:
+    "No candidate polymers meeting all five criteria were found for this
+     input. Try a polymer with higher aromaticity or more crosslinkable
+     functional groups (e.g. imide, ester, or epoxide moieties)."
+    Do not crash — gracefully display the closest candidates and how far
+    they were from passing.
+
+  Log n_feasible / 5000 to the terminal UI.
+
+────────────────────────────────────────
+8C — CANDIDATE RANKING (two outputs)
+FILE: step6_inverse_design/candidate_ranker.py
+────────────────────────────────────────
+
+  From the feasible candidates, select TWO to show the user.
+
+  OUTPUT 1 — HIGHEST COMPOSITE SCORE:
+    CompositeScore = (
+        - 1.0  * abs(Tg  - 350.0)      # reward being well above threshold
+        - 8.0  * abs(Dk  - 3.0)        # reward low Dk
+        - 12.0 * abs(E   - 3.5)        # reward high modulus
+        - 80.0 * TML                   # heavily penalise outgassing
+        + 0.1  * Rad                   # reward high radiation tolerance
+    )
+    Select: argmax(CompositeScore) among feasible candidates
+
+  OUTPUT 2 — MOST STRUCTURALLY SIMILAR TO INPUT:
+    Compute Tanimoto similarity between the Morgan fingerprint of the
+    input SMILES and the Morgan fingerprint corresponding to each
+    feasible candidate.
+    NOTE: Each LHS candidate is a feature vector, not a SMILES.
+    The Morgan FP for a candidate is approximated by finding the training
+    sample whose feature vector is closest (L2 distance) to the candidate
+    and using that sample's Morgan FP. This is a reasonable approximation
+    since the training samples are generated from the input SMILES.
+    Select: argmax(Tanimoto) among feasible candidates
+
+  Both outputs are passed to Step 7 (SMILES generation — pending).
+
+================================================================================
+  SECTION 9 — STEP 7: OUTPUT SMILES GENERATION [PENDING — Q8]
+================================================================================
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │                    THIS SECTION IS A PLACEHOLDER                        │
+  │                                                                          │
+  │  The logic for generating or retrieving the output SMILES strings will   │
+  │  be specified in a follow-up document once Q8 is answered.               │
+  │                                                                          │
+  │  INTERFACE CONTRACT (fixed — do not change):                             │
+  │    Input:                                                                │
+  │      user_smiles       : str   — canonicalised input SMILES              │
+  │      candidate_A       : dict  — feature vector + predicted properties   │
+  │                                  for highest composite score candidate   │
+  │      candidate_B       : dict  — feature vector + predicted properties   │
+  │                                  for most structurally similar candidate │
+  │      thresholds        : dict  — the five property thresholds            │
+  │                                                                          │
+  │    Output:                                                               │
+  │      smiles_A          : str   — valid SMILES for candidate A            │
+  │      smiles_B          : str   — valid SMILES for candidate B            │
+  │      properties_A      : dict  — {Tg, Dk, E, TML, Rad} for candidate A  │
+  │      properties_B      : dict  — {Tg, Dk, E, TML, Rad} for candidate B  │
+  │                                                                          │
+  │  TOOLS THAT MAY BE USED IN THIS SECTION (pending decision):             │
+  │    - STONED-SELFIES : atom/bond substitution on the input SMILES         │
+  │    - SELFIES        : grammar-constrained SMILES mutation                │
+  │    - Chemformer     : transformer-based SMILES generation                │
+  │    - REINVENT       : RL-based molecule generation                       │
+  │    - PolyGAN        : GAN-based polymer SMILES generation                │
+  │    - Retrieval DB   : nearest-neighbour lookup from PI1M/PoLyInfo        │
+  │                                                                          │
+  │  Any of the above can be dropped in without changing Sections 1–8       │
+  │  or Section 10 (UI). Only this section needs to change.                  │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+  SECTION 10 — STEP 8: UI (Terminal / Hacker Aesthetic)
+================================================================================
+
+FRAMEWORK: Flask (localhost:5000)
+FILES:
+  app.py                        ← Flask routes
+  step8_ui/templates/index.html ← single-page UI
+  step8_ui/static/style.css     ← terminal aesthetic
+  step8_ui/static/script.js     ← async submit, progress, table render
+
+─────────────────────────────────
+VISUAL DESIGN SPECIFICATION
+─────────────────────────────────
+
+  COLOUR PALETTE:
+    Background       : #0a0a0a  (near black)
+    Primary text     : #00ff41  (matrix green)
+    Secondary text   : #008f11  (darker green)
+    Accent / borders : #003b00  (very dark green)
+    Warning text     : #ffb700  (amber — for thresholds not met)
+    Error text       : #ff2222  (red — for invalid SMILES)
+    Table headers    : #00cc33
+    Table borders    : #004400
+    Input field bg   : #001a00
+    Input text       : #00ff41
+
+  TYPOGRAPHY:
+    All text         : font-family: 'Courier New', 'Courier', monospace
+    Page heading     : font-size: 1.6rem, letter-spacing: 0.15em
+    Labels           : font-size: 0.85rem, text-transform: uppercase
+    Table data       : font-size: 0.9rem
+
+  DECORATIVE ELEMENTS:
+    Scanline overlay : a subtle repeating-linear-gradient on the body
+                       to simulate CRT scanlines (opacity ~0.03)
+    Blinking cursor  : CSS animation on the page title suffix " _"
+    Border style     : single-pixel solid #003b00 on all containers
+    Progress bar     : ASCII-style: [=========>  ] 75% — animated via JS
+
+─────────────────────────────────
+PAGE LAYOUT (single scrollable page)
+─────────────────────────────────
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  POLYMER INVERSE DESIGN TERMINAL v1.0 _                            │
+  │  ─────────────────────────────────────────────────────────────────  │
+  │                                                                     │
+  │  > ENTER POLYMER SMILES                                             │
+  │  ┌─────────────────────────────────────────────────────────────┐   │
+  │  │  CC(=O)Oc1ccc(...)cc1_                                      │   │
+  │  └─────────────────────────────────────────────────────────────┘   │
+  │  [ ANALYSE ]                                                        │
+  │                                                                     │
+  │  ─────────────────────────────────────────────────────────────────  │
+  │  > SYSTEM LOG                                                       │
+  │  [OK]  SMILES validated → canonical form accepted                  │
+  │  [OK]  Extracted 200 RDKit descriptors                             │
+  │  [OK]  Computed 100 physics features                               │
+  │  [OK]  Generated 100 simulated polyBERT dims                       │
+  │  [OK]  Dataset generated: 200 samples, mean T = 0.91              │
+  │  [OK]  Model trained: avg R² = 0.81                               │
+  │  [OK]  LHS inverse design: 3,241 / 5,000 feasible candidates      │
+  │  [===========================>      ] running...                   │
+  │                                                                     │
+  │  ─────────────────────────────────────────────────────────────────  │
+  │  > INPUT POLYMER PROPERTIES                                         │
+  │  Tg: 210 °C   Dk: 3.8   E: 1.4 GPa   TML: 1.8%   Rad: 12 MGy    │
+  │                                                                     │
+  │  ─────────────────────────────────────────────────────────────────  │
+  │  > RECOMMENDED OUTPUT POLYMERS                                      │
+  │                                                                     │
+  │  ┌──────────────────────────────────┬────────────────────────────┐  │
+  │  │ Selection reason                 │ SMILES                     │  │
+  │  ├──────────────────────────────────┼────────────────────────────┤  │
+  │  │ Highest composite score          │ O=C1OC(=O)c2cc(...)cc21   │  │
+  │  │ Most similar to your input       │ CC(=O)Nc1ccc(...)cc1      │  │
+  │  └──────────────────────────────────┴────────────────────────────┘  │
+  │                                                                     │
+  │  ─────────────────────────────────────────────────────────────────  │
+  │  > PROPERTY COMPARISON                                              │
+  │                                                                     │
+  │  ┌───────────────────┬──────────┬──────────────┬─────────────────┐  │
+  │  │ Property          │ Input    │ Best score   │ Most similar    │  │
+  │  ├───────────────────┼──────────┼──────────────┼─────────────────┤  │
+  │  │ Tg (°C)           │  210     │  312  [OK]   │  295  [OK]     │  │
+  │  │ Dielectric const  │  3.80    │  3.12 [OK]   │  3.31 [OK]     │  │
+  │  │ Young's mod GPa   │  1.40    │  2.81 [OK]   │  2.24 [OK]     │  │
+  │  │ Outgassing TML %  │  1.80    │  0.62 [OK]   │  0.81 [OK]     │  │
+  │  │ Radiation MGy     │  12.0    │  35.2 [OK]   │  28.1 [OK]     │  │
+  │  └───────────────────┴──────────┴──────────────┴─────────────────┘  │
+  │                                                                     │
+  │  ─────────────────────────────────────────────────────────────────  │
+  │  > MOLECULAR STRUCTURE                                              │
+  │  [ Molecular structure visualisation — reserved for future build ]  │
+  │                                                                     │
+  │                   [ polyBERT: simulated embeddings ]               │
+  └─────────────────────────────────────────────────────────────────────┘
+
+─────────────────────────────────
+FLASK ROUTES (app.py)
+─────────────────────────────────
+
+  GET  /           → serve index.html
+  POST /analyse    → accept JSON {"smiles": "..."}, run full pipeline,
+                     return JSON response with all results
+  GET  /health     → return {"status": "ok"} for debugging
+
+  The /analyse endpoint runs synchronously for now (Path A is per-query).
+  Add Flask-SocketIO for streaming log updates in a future iteration.
+
+─────────────────────────────────
+JAVASCRIPT BEHAVIOUR (script.js)
+─────────────────────────────────
+
+  1. On form submit: disable the button, show "PROCESSING..." in the log area.
+  2. POST to /analyse with the SMILES string as JSON.
+  3. While waiting: animate the ASCII progress bar.
+  4. On response: populate the system log line by line (staggered 80ms delay
+     per line to simulate terminal typeout).
+  5. Render both tables.
+  6. If error returned: display in red with prefix "[ERROR]".
+  7. If no feasible candidates: display amber warning with suggestions.
+
+================================================================================
+  SECTION 11 — TOOL & LIBRARY RECOMMENDATIONS
+================================================================================
+
+CORE SCIENTIFIC LIBRARIES
+  rdkit          → SMILES parsing, descriptor extraction, Morgan fingerprints
+  numpy          → array operations, seeded RNG, variance injection
+  pandas         → feature DataFrames, CSV export
+  scikit-learn   → Random Forest, StandardScaler, train_test_split, PCA
+  scipy          → Latin Hypercube Sampling (scipy.stats.qmc)
+  selfies        → SELFIES string operations (for Step 7 future use)
+
+WEB / UI
+  flask          → localhost server and API endpoints
+  flask-socketio → (future) streaming log updates to browser
+
+GENERATIVE AI TOOLS (for Step 7 — output SMILES generation)
+  The following GenAI / cheminformatics tools are recommended candidates.
+  Final choice is deferred to Q8 specification.
+
+  ┌────────────────────────┬────────────────────────────────────────────────┐
+  │ Tool                   │ What it does                                   │
+  ├────────────────────────┼────────────────────────────────────────────────┤
+  │ STONED-SELFIES         │ Atom/bond substitution on SELFIES strings.     │
+  │ (github.com/aspuru-   │ Fast, local, produces valid SMILES. Best for   │
+  │  guzik-group/stoned)  │ structurally similar candidates. Recommended   │
+  │                        │ as the first implementation of Step 7.         │
+  ├────────────────────────┼────────────────────────────────────────────────┤
+  │ REINVENT 4             │ RL-based de novo molecule generation. More     │
+  │ (AstraZeneca, GitHub)  │ compute-intensive but highly controllable via  │
+  │                        │ scoring functions. Good for novel candidates.  │
+  ├────────────────────────┼────────────────────────────────────────────────┤
+  │ Chemformer             │ Transformer model for SMILES-to-SMILES tasks.  │
+  │ (AstraZeneca, GitHub)  │ Can be used for scaffold hopping. Requires     │
+  │                        │ ~4GB RAM for the base model.                   │
+  ├────────────────────────┼────────────────────────────────────────────────┤
+  │ PolyGAN / Poly-SMILES  │ GAN trained specifically on polymer SMILES.    │
+  │ (research code)        │ Best for polymer-domain novelty. May need      │
+  │                        │ custom training data.                          │
+  ├────────────────────────┼────────────────────────────────────────────────┤
+  │ PI1M dataset           │ 1 million polymer SMILES from literature.      │
+  │ (polymergenome.org)    │ Can serve as a retrieval database — find the   │
+  │                        │ nearest polymer that meets thresholds.         │
+  ├────────────────────────┼────────────────────────────────────────────────┤
+  │ PoLyInfo               │ Curated experimental polymer property DB.      │
+  │ (polyinfo.nims.go.jp)  │ Use to validate that predicted properties are  │
+  │                        │ in a physically realistic range.               │
+  ├────────────────────────┼────────────────────────────────────────────────┤
+  │ GPT-4 / Claude API     │ Can be prompted to propose SMILES variants     │
+  │                        │ given structural constraints described in text. │
+  │                        │ Requires API key and internet connection.      │
+  │                        │ Useful for generating diverse candidates fast. │
+  └────────────────────────┴────────────────────────────────────────────────┘
+
+================================================================================
+  SECTION 12 — BUILD ORDER (recommended sequence)
+================================================================================
+
+  Phase 1 — Core pipeline (no UI, command-line only)
+    1. Set up Conda environment and install all dependencies.
+    2. Build step1_input/validate_smiles.py and test on 5 known SMILES.
+    3. Build step2_feature_extraction/rdkit_descriptors.py and verify ~200 cols.
+    4. Build step2_feature_extraction/physics_features.py and verify ~100 cols.
+    5. Build step2_feature_extraction/implicit_embeddings.py (600 → 100 dims).
+    6. Build step2_feature_extraction/morgan_fingerprints.py (2048 bits, separate).
+    7. Build step3_dataset_generation/variance_injection.py (200 samples).
+    8. Build step3_dataset_generation/tanimoto_checker.py and tune sigmas.
+    9. Build step4_target_computation/property_equations.py (5 targets).
+   10. Build step5_model/train.py and verify R² > 0.70 on test set.
+   11. Build step6_inverse_design/ (LHS → filter → rank → two candidates).
+   12. End-to-end test: paste a PEEK or Polyimide SMILES, get two candidates.
+
+  Phase 2 — UI
+   13. Build Flask app.py with /analyse route.
+   14. Build index.html with terminal aesthetic and both output tables.
+   15. Build script.js with async submit and typeout log animation.
+   16. Test on localhost:5000.
+
+  Phase 3 — Step 7 (output SMILES — pending Q8)
+   17. Implement chosen SMILES generation method in step7_output_smiles/.
+   18. Connect output to the UI tables.
+
+  Phase 4 — Molecular structure display (lowest priority, reserved for end)
+   19. Integrate RDKit PNG/SVG output or a web-based renderer (Ketcher, Mol*)
+       to display the drawn structure of input and output polymers.
+
+================================================================================
+  SECTION 13 — KNOWN LIMITATIONS & HONEST NOTES
+================================================================================
+
+  1. PATH A LIMITATION: The model is retrained from scratch on every query.
+     This means it only has 200 samples of one polymer's neighbourhood.
+     Predictions will be most accurate for polymers structurally similar to
+     the input. For very exotic inputs, R² may be low — the UI should always
+     display the R² score so the user can judge confidence.
+
+  2. SIMULATED polyBERT: The embeddings are deterministic hash-based vectors,
+     not true transformer representations. They still provide structural
+     diversity signal but are less semantically rich than the real model.
+     This is always disclosed in the UI.
+
+  3. PROPERTY EQUATIONS: The target property equations in Section 6 are
+     physics-inspired but synthetic. They are calibrated to produce realistic
+     ranges for common engineering polymers. They are NOT replacements for
+     experimental measurement or high-fidelity DFT/MD simulation.
+
+  4. OUTPUT SMILES: Until Section 7 is implemented, the system cannot return
+     a true novel SMILES. The candidate feature vectors represent hypothetical
+     polymers, not guaranteed synthesisable molecules. Step 7 is the bridge
+     between feature space and chemical space.
+
+  5. TANIMOTO RANGE: The 0.85–0.98 target range ensures the 200 training
+     samples are diverse enough to train a useful model but similar enough to
+     all be physically plausible neighbours of the input polymer. If the input
+     SMILES is very small (MW < 200), the variance injection may produce
+     physically implausible samples — validate with a MW check in Step 1.
+
+================================================================================
+  END OF BLUEPRINT
+  Version 1.0 — Q8 (output SMILES generation) pending
+  Next action: Implement Phase 1 (Sections 3–8), test end-to-end,
+               then share Q8 specification for Section 9.
+================================================================================

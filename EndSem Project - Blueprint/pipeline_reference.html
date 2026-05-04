@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QSPR Pipeline Reference</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0e14;
+    --surface: #121620;
+    --surface2: #1a2030;
+    --border: #2a3448;
+    --accent: #4af0c4;
+    --accent2: #5b8fff;
+    --accent3: #f5a623;
+    --accent4: #e05c7a;
+    --text: #cdd6f4;
+    --text-dim: #6b7a99;
+    --text-bright: #ffffff;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 32px 24px 60px;
+  }
+
+  /* ── Header ── */
+  .header {
+    border-left: 3px solid var(--accent);
+    padding: 0 0 0 20px;
+    margin-bottom: 36px;
+  }
+  .header .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-bright);
+    letter-spacing: -0.3px;
+  }
+  .header p {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Task card layout ── */
+  .task-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+
+  .task-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 18px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+  .task-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--bg);
+    background: var(--accent);
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .task-num.t2  { background: var(--accent2); }
+  .task-num.t3  { background: var(--accent3); color: #1a1a1a; }
+  .task-num.t4  { background: var(--accent4); }
+  .task-num.t5  { background: #9d7fe8; }
+  .task-num.t6  { background: #56c4e8; color: #1a1a1a; }
+  .task-num.t7  { background: #68e89a; color: #1a1a1a; }
+  .task-num.t8  { background: #f0a94a; color: #1a1a1a; }
+
+  .task-filename {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-bright);
+  }
+  .task-purpose-short {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+
+  /* ── Inner table ── */
+  .task-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .task-table th {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    background: var(--surface2);
+    padding: 8px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .task-table td {
+    padding: 10px 14px;
+    vertical-align: top;
+    border-bottom: 1px solid #1e2636;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .task-table tr:last-child td { border-bottom: none; }
+  .task-table .col-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    white-space: nowrap;
+    width: 110px;
+  }
+
+  /* ── Chips / tags ── */
+  .chip {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    margin: 2px 3px 2px 0;
+    white-space: nowrap;
+  }
+  .chip-in  { background: #1a2e22; color: #4af0c4; border: 1px solid #2a4d38; }
+  .chip-out { background: #1e1a2e; color: #a08fff; border: 1px solid #3a2d5e; }
+  .chip-none { background: #1e2228; color: #6b7a99; border: 1px solid var(--border); font-style: italic; }
+
+  /* ── Print statements ── */
+  .print-list {
+    list-style: none;
+    padding: 0;
+  }
+  .print-list li {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #8be9a8;
+    padding: 2px 0;
+    border-left: 2px solid #2a4838;
+    padding-left: 8px;
+    margin-bottom: 3px;
+  }
+  .print-list li.warn { color: #f5c842; border-left-color: #4a3e1a; }
+  .print-list li.err  { color: #f07a7a; border-left-color: #4a2020; }
+  .print-list li.info { color: #7ab8f5; border-left-color: #1a3050; }
+  .print-list li.save { color: #c8a0f0; border-left-color: #3a2a50; }
+
+  /* ── Functions ── */
+  .fn-list {
+    list-style: none;
+    padding: 0;
+  }
+  .fn-item {
+    margin-bottom: 8px;
+    padding: 7px 10px;
+    background: #0f131c;
+    border-radius: 4px;
+    border: 1px solid #1e2636;
+  }
+  .fn-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent2);
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+  .fn-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* ── Purpose block ── */
+  .purpose-text {
+    color: var(--text);
+    font-size: 12px;
+  }
+
+  /* ── Col widths via th ── */
+  .col-w-purpose  { width: 16%; }
+  .col-w-inputs   { width: 15%; }
+  .col-w-outputs  { width: 15%; }
+  .col-w-prints   { width: 24%; }
+  .col-w-funcs    { width: 30%; }
+
+  /* ── Scrollable on narrow screens ── */
+  .scroll-wrap { overflow-x: auto; }
+
+  .divider-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 28px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .divider-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="tag">QSPR Pipeline · Reference Document</div>
+  <h1>Informatics-Driven Polymer Design — Task Breakdown</h1>
+  <p>Polyimide · PEEK · PTFE &nbsp;|&nbsp; LEO Satellite Shielding &nbsp;|&nbsp; Thermal Endurance & Dielectric Stability</p>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#4af0c4"></div> Input file</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a08fff"></div> Output file</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#8be9a8"></div> Info / success print</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f5c842"></div> Warning print</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#c8a0f0"></div> Save confirmation print</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7ab8f5"></div> Progress / metadata print</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TASK 1 -->
+<div class="divider-label">Data Preparation</div>
+
+<div class="task-card">
+  <div class="task-header">
+    <span class="task-num">TASK 1</span>
+    <span class="task-filename">task1_data_curation.py</span>
+    <span class="task-purpose-short">Generates synthetic dataset from SMILES</span>
+  </div>
+  <div class="scroll-wrap">
+  <table class="task-table">
+    <colgroup>
+      <col class="col-w-purpose">
+      <col class="col-w-inputs">
+      <col class="col-w-outputs">
+      <col class="col-w-prints">
+      <col class="col-w-funcs">
+    </colgroup>
+    <tr>
+      <th>Purpose</th>
+      <th>Inputs &amp; Contents</th>
+      <th>Outputs &amp; Contents</th>
+      <th>Key Print Statements</th>
+      <th>Functions</th>
+    </tr>
+    <tr>
+      <td class="purpose-text">Entry point of the entire pipeline. Generates 720 synthetic polymer samples (240 per polymer) by mutating hardcoded SMILES strings, then extracts 120 features across three blocks (structural, latent, physics) and computes 4 QSPR target values.</td>
+      <td><span class="chip chip-none">None</span><br>
+        SMILES for Polyimide, PEEK, PTFE are hardcoded in <code>POLYMER_REGISTRY</code></td>
+      <td>
+        <span class="chip chip-out">master_dataset.pkl</span><br>
+        720-row DataFrame: identifiers (Polymer, SMILES, Sample_ID) + 40 structural + 40 latent + 40 physics features + 4 targets (Tg_degC, Dk_1GHz, Outgassing_TML_pct, RadiationDose_MGy)
+      </td>
+      <td>
+        <ul class="print-list">
+          <li>✔ RDKit detected — using genuine molecular descriptors</li>
+          <li class="warn">⚠ RDKit not installed — using deterministic mock descriptors</li>
+          <li>▶ Extracting features for [Polymer] ...</li>
+          <li class="warn">⚠ Could only generate N unique derivatives. Padding the rest.</li>
+          <li>[+] Processed N/240 RDKit descriptors for [Polymer]</li>
+          <li>✔ Master dataset shape: (720, 127)</li>
+          <li class="save">Successfully saved master_dataset.pkl with (720, 127)</li>
+        </ul>
+      </td>
+      <td>
+        <ul class="fn-list">
+          <li class="fn-item"><div class="fn-name">generate_derivatives(base_smiles, polymer_class, num_needed)</div><div class="fn-desc">Creates 240 SMILES per polymer via RDKit chemical mutations (fluorination, methylation, etc.) enforcing Tanimoto ≥ 0.60 similarity to the base structure</div></li>
+          <li class="fn-item"><div class="fn-name">extract_structural_features_rdkit(smiles_list, polymer_name)</div><div class="fn-desc">Computes 40 RDKit molecular descriptors (MolWt, TPSA, MolLogP, ring counts, fragment counts, Kappa indices, etc.) per SMILES</div></li>
+          <li class="fn-item"><div class="fn-name">extract_structural_features_mock(polymer_name, n_samples)</div><div class="fn-desc">Fallback when RDKit is absent — generates deterministic Gaussian-noised reference values</div></li>
+          <li class="fn-item"><div class="fn-name">extract_latent_features(polymer_name, smiles_list)</div><div class="fn-desc">Simulates 40-dim polyBERT embeddings with polymer-class-specific anchors (aromatic, polar, backbone, sequence biases)</div></li>
+          <li class="fn-item"><div class="fn-name">extract_physics_features(polymer_name, n_samples)</div><div class="fn-desc">Samples 40 physics/morphological properties from Gaussian priors defined per polymer (crystallinity, FVF, chain rigidity, dielectric constants, moduli, etc.)</div></li>
+          <li class="fn-item"><div class="fn-name">build_master_dataset()</div><div class="fn-desc">Orchestrates the three feature extractors for all polymers, concatenates into a single 720×127 DataFrame</div></li>
+          <li class="fn-item"><div class="fn-name">compute_targets(master_df)</div><div class="fn-desc">Derives 4 target labels per sample using physics-informed equations (Tg from rigidity/crystallinity/FVF; Dk from polarizability/FVF; Outgassing from FVF; Radiation from aromaticity)</div></li>
+          <li class="fn-item"><div class="fn-name">_seeded_noise(polymer_name, feature_name, sample_idx, scale)</div><div class="fn-desc">Deterministic per-sample noise using MD5-seeded RNG for reproducible mock data</div></li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TASK 2 -->
+<div class="divider-label">Modeling</div>
+
+<div class="task-card">
+  <div class="task-header">
+    <span class="task-num t2">TASK 2</span>
+    <span class="task-filename">task2_qspr_modeling.py</span>
+    <span class="task-purpose-short">Trains multi-target MLP QSPR model</span>
+  </div>
+  <div class="scroll-wrap">
+  <table class="task-table">
+    <colgroup>
+      <col class="col-w-purpose">
+      <col class="col-w-inputs">
+      <col class="col-w-outputs">
+      <col class="col-w-prints">
+      <col class="col-w-funcs">
+    </colgroup>
+    <tr>
+      <th>Purpose</th>
+      <th>Inputs &amp; Contents</th>
+      <th>Outputs &amp; Contents</th>
+      <th>Key Print Statements</th>
+      <th>Functions</th>
+    </tr>
+    <tr>
+      <td class="purpose-text">Trains a Multi-Layer Perceptron with architecture [256→128→64] to simultaneously predict all 4 polymer properties from 120 standardised features. Evaluates global and per-polymer R² and RMSE, then serialises the model bundle for downstream use.</td>
+      <td>
+        <span class="chip chip-in">master_dataset.pkl</span><br>
+        720-row DataFrame with 120 feature columns and 4 target columns (Tg_degC, Dk_1GHz, Outgassing_TML_pct, RadiationDose_MGy)
+      </td>
+      <td>
+        <span class="chip chip-out">qspr_model.pkl</span><br>
+        Dict with: <b>model</b> (MultiOutputRegressor wrapping MLPRegressor), <b>scaler</b> (fitted StandardScaler), <b>metrics</b> (global R²/RMSE per target + per-polymer within-class R²), <b>feature_cols</b> (ordered list of 120 column names)
+      </td>
+      <td>
+        <ul class="print-list">
+          <li>Loading master_dataset ...</li>
+          <li>✔ Loaded: master_dataset.pkl</li>
+          <li class="info">Training Multi-Layer Perceptron [256 → 128 → 64] on 120-feature vectors ...</li>
+          <li>✔ Training complete.</li>
+          <li class="info">Global metrics table: R² and RMSE per target</li>
+          <li class="info">Per-polymer within-class R² table (Tg, Dk, Out, Rad)</li>
+          <li class="info">ℹ Model: MLP | Layers: [256→128→64] | Train/Test: 80/20</li>
+          <li class="save">💾 Saved: qspr_model.pkl → (input for task3_inverse_design.py)</li>
+        </ul>
+      </td>
+      <td>
+        <ul class="fn-list">
+          <li class="fn-item"><div class="fn-name">build_qspr_model(master_df)</div><div class="fn-desc">Full model training pipeline: splits data 80/20, standardises features, fits MultiOutputRegressor(MLP), evaluates global R²/RMSE per target, then computes per-polymer within-class R² by re-splitting each polymer's subset. Returns (model, scaler, metrics, feature_cols).</div></li>
+          <li class="fn-item"><div class="fn-name">print_banner(text, char, width)</div><div class="fn-desc">Renders a bordered section header to stdout</div></li>
+          <li class="fn-item"><div class="fn-name">print_ml_report(metrics)</div><div class="fn-desc">Formats and prints the global + per-polymer R²/RMSE table. Flags inflated global R² (>0.97) that arises from between-class separation rather than true within-class learning</div></li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TASK 3 -->
+<div class="task-card">
+  <div class="task-header">
+    <span class="task-num t3">TASK 3</span>
+    <span class="task-filename">task3_inverse_design.py</span>
+    <span class="task-purpose-short">Hybrid inverse design via RDKit mutations</span>
+  </div>
+  <div class="scroll-wrap">
+  <table class="task-table">
+    <colgroup>
+      <col class="col-w-purpose">
+      <col class="col-w-inputs">
+      <col class="col-w-outputs">
+      <col class="col-w-prints">
+      <col class="col-w-funcs">
+    </colgroup>
+    <tr>
+      <th>Purpose</th>
+      <th>Inputs &amp; Contents</th>
+      <th>Outputs &amp; Contents</th>
+      <th>Key Print Statements</th>
+      <th>Functions</th>
+    </tr>
+    <tr>
+      <td class="purpose-text">Performs structural inverse design: for each polymer, generates 50 chemically mutated SMILES candidates, predicts their Tg and Dk via the QSPR model, and selects the candidate with the lowest Dk that still satisfies the LEO thermal constraint (Tg ≥ target). PTFE is skipped (no aromatic rings to mutate).</td>
+      <td>
+        <span class="chip chip-in">master_dataset.pkl</span> Base SMILES and mean feature vectors per polymer<br><br>
+        <span class="chip chip-in">qspr_model.pkl</span> Trained MLP, fitted scaler, feature column list
+      </td>
+      <td>
+        <span class="chip chip-out">inv_results.pkl</span><br>
+        List of 3 dicts (one per polymer) each containing: polymer name, input_smiles, winning_smiles, predicted_Tg_degC, predicted_Dk, base_Tg, base_Dk, optimal physics parameters (FVF, Crystallinity, ChainRigidity, DielPolarizability), converged flag<br><br>
+        <span class="chip chip-out">candidates.csv</span><br>
+        All evaluated candidate structures: Polymer_Family, Base_SMILES, Candidate_SMILES, Tanimoto_Similarity, Predicted_Tg_degC, Predicted_Dk
+      </td>
+      <td>
+        <ul class="print-list">
+          <li class="err">Error: Could not import task1_data_curation</li>
+          <li>🔍 Optimising [Polymer] ...</li>
+          <li class="info">--> Base SMILES: [smiles string]</li>
+          <li class="info">Base Tg=X.X°C  Base Dk=X.XXXX</li>
+          <li>--> Generating structural mutations for [Polymer]...</li>
+          <li class="warn">⚠ Could only generate N unique mutations. Padding the rest.</li>
+          <li class="warn">⚠ No valid structural mutations found. Outputting base.</li>
+          <li>Evaluated 50 candidate structures.</li>
+          <li class="warn">⚠ No candidates beat the base polymer. Outputting base.</li>
+          <li>--> PTFE: Skipping mutation (no aromatic rings)</li>
+          <li>--> BEST NEW SMILES: [smiles string]</li>
+          <li class="info">Best Tg=X.X°C  Best Dk=X.XXXX</li>
+          <li class="save">💾 Saved: inv_results.pkl</li>
+          <li class="save">💾 Saved: candidates.csv → (Contains N evaluated structures)</li>
+        </ul>
+      </td>
+      <td>
+        <ul class="fn-list">
+          <li class="fn-item"><div class="fn-name">generate_candidates(input_smiles, num_candidates=50)</div><div class="fn-desc">Applies 4 RDKit reaction SMARTS (fluorination, trifluoromethylation, methylation, chlorination) iteratively on a growing pool of mutated mols. Filters by Tanimoto similarity [0.60, 0.99] against the base structure. Pads shortfalls with the base SMILES.</div></li>
+          <li class="fn-item"><div class="fn-name">structural_inverse_design(polymer_name, base_smiles, master_df, model, scaler, feature_cols)</div><div class="fn-desc">Core optimisation loop: computes mean feature vector for the polymer, generates 50 candidates, evaluates each by replacing the 40 structural features with RDKit-computed values for the candidate SMILES, predicts Tg/Dk, and selects the winner via constrained Dk minimisation (Tg ≥ target threshold). Returns best result dict and full candidate log.</div></li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TASK 4 -->
+<div class="divider-label">Output & Reporting</div>
+
+<div class="task-card">
+  <div class="task-header">
+    <span class="task-num t4">TASK 4</span>
+    <span class="task-filename">task4_output_management.py</span>
+    <span class="task-purpose-short">Assembles and exports final per-polymer CSVs</span>
+  </div>
+  <div class="scroll-wrap">
+  <table class="task-table">
+    <colgroup>
+      <col class="col-w-purpose">
+      <col class="col-w-inputs">
+      <col class="col-w-outputs">
+      <col class="col-w-prints">
+      <col class="col-w-funcs">
+    </colgroup>
+    <tr>
+      <th>Purpose</th>
+      <th>Inputs &amp; Contents</th>
+      <th>Outputs &amp; Contents</th>
+      <th>Key Print Statements</th>
+      <th>Functions</th>
+    </tr>
+    <tr>
+      <td class="purpose-text">Pipeline's final aggregation stage. Merges all features (including Morgan fingerprints), detects and reports leaky features (constant-within-class bits), applies optional export config, prints consolidated ML and inverse design reports, computes an overall confidence score, and writes one 100-row CSV per polymer.</td>
+      <td>
+        <span class="chip chip-in">master_dataset.pkl</span> Full feature + target DataFrame<br><br>
+        <span class="chip chip-in">qspr_model.pkl</span> Metrics + feature cols<br><br>
+        <span class="chip chip-in">inv_results.pkl</span> Per-polymer best designs<br><br>
+        <span class="chip chip-in">morgan_fingerprints.pkl</span> 64-bit ECFP4 fingerprints per sample<br><br>
+        <span class="chip chip-in">export_config.pkl</span> (optional) User-chosen feature subset &amp; column order
+      </td>
+      <td>
+        <span class="chip chip-out">Member1_Polyimide.csv</span><br>
+        <span class="chip chip-out">Member2_PEEK.csv</span><br>
+        <span class="chip chip-out">Member3_PTFE.csv</span><br>
+        Each: 100 rows × N cols — selected structural/latent/physics/Morgan feature columns (leaky bits flagged; excluded from scoring) + Tg_degC + Dk_1GHz targets
+      </td>
+      <td>
+        <ul class="print-list">
+          <li>Loaded: master_dataset.pkl / qspr_model.pkl / inv_results.pkl / morgan_fingerprints.pkl</li>
+          <li class="info">ℹ physics_check_report.pkl not found — run task7 for full confidence scoring</li>
+          <li class="info">FEATURE LEAKAGE REMOVAL: Before/Dropped/Kept counts per block</li>
+          <li class="warn">Morgan fingerprint bits are constant within each polymer class (std=0)</li>
+          <li class="warn">If retraining, consider excluding — inflates R² without improving within-class prediction</li>
+          <li class="info">Estimated R² gain from exclusion during retraining: ~+15%</li>
+          <li>✔ export_config.pkl loaded / ℹ export_config.pkl not found — using all features</li>
+          <li class="info">FEATURE LAYOUT: column ranges per block</li>
+          <li class="info">Global metrics table: R²/RMSE per target</li>
+          <li class="info">Per-polymer within-class R² (honest metric)</li>
+          <li class="info">INVERSE DESIGN: FVF, Cryst, Tg, Dk per polymer with OK/X LEO flags</li>
+          <li class="info">OUTPUT CONFIDENCE SCORE: X.X / 100 → HIGH/MEDIUM/LOW</li>
+          <li class="info">Weights: Physics validity 33.3% | Per-polymer R² 33.3% | Feature coverage 22.2% | Inverse design 11.1%</li>
+          <li class="save">💾 Saved: outputs/Member1_Polyimide.csv [100 rows × N cols]</li>
+          <li class="save">💾 Saved: outputs/Member2_PEEK.csv</li>
+          <li class="save">💾 Saved: outputs/Member3_PTFE.csv</li>
+        </ul>
+      </td>
+      <td>
+        <ul class="fn-list">
+          <li class="fn-item"><div class="fn-name">compute_within_class_std(enriched_df, feature_cols)</div><div class="fn-desc">Computes per-feature standard deviation within each polymer class to identify constant (leaky) features</div></li>
+          <li class="fn-item"><div class="fn-name">remove_leaky_features(enriched_df, threshold)</div><div class="fn-desc">Identifies Morgan and latent features with std below threshold (default 1e-8). Returns a dict of dropped/kept sets per block. Does not drop from CSV — flags for retraining advice only.</div></li>
+          <li class="fn-item"><div class="fn-name">load_export_config()</div><div class="fn-desc">Loads export_config.pkl if it exists; otherwise returns None to trigger full-feature defaults</div></li>
+          <li class="fn-item"><div class="fn-name">resolve_feature_cols(config, leakage)</div><div class="fn-desc">Determines final ordered list of feature columns to export based on config choices, respecting block selections</div></li>
+          <li class="fn-item"><div class="fn-name">merge_morgan_fingerprints(master_df, morgan_df)</div><div class="fn-desc">Joins Morgan fingerprint columns onto the master DataFrame using Sample_ID or by positional concat</div></li>
+          <li class="fn-item"><div class="fn-name">save_polymer_csvs(enriched_df, feature_cols)</div><div class="fn-desc">Filters top 100 rows per polymer, selects feature + target columns, asserts shape (100 × N), saves to outputs/ directory</div></li>
+          <li class="fn-item"><div class="fn-name">compute_confidence(metrics, inv_results, feature_cols, leakage, physics_report)</div><div class="fn-desc">Scores the pipeline output 0–100 across four weighted pillars: physics validity (33.3%), per-polymer R² (33.3%), feature coverage (22.2%), inverse design success (11.1%)</div></li>
+          <li class="fn-item"><div class="fn-name">print_leakage_report / print_ml_report / print_inverse_design_report / print_feature_layout / print_morgan_summary / print_confidence</div><div class="fn-desc">Suite of formatted console reporting functions covering all pipeline stages</div></li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TASK 5 -->
+<div class="divider-label">Supplementary Modules</div>
+
+<div class="task-card">
+  <div class="task-header">
+    <span class="task-num t5">TASK 5</span>
+    <span class="task-filename">task5_morgan_fingerprint.py</span>
+    <span class="task-purpose-short">Generates ECFP4 Morgan fingerprints</span>
+  </div>
+  <div class="scroll-wrap">
+  <table class="task-table">
+    <colgroup>
+      <col class="col-w-purpose">
+      <col class="col-w-inputs">
+      <col class="col-w-outputs">
+      <col class="col-w-prints">
+      <col class="col-w-funcs">
+    </colgroup>
+    <tr>
+      <th>Purpose</th>
+      <th>Inputs &amp; Contents</th>
+      <th>Outputs &amp; Contents</th>
+      <th>Key Print Statements</th>
+      <th>Functions</th>
+    </tr>
+    <tr>
+      <td class="purpose-text">Computes 64-bit ECFP4 Morgan fingerprints (radius=2) for each polymer's repeat-unit SMILES, broadcasts the same fingerprint vector to all 240 samples of each polymer, then analyses inter-polymer structural similarity via Tanimoto scores. Produces a merge-ready DataFrame for task4.</td>
+      <td>
+        <span class="chip chip-in">master_dataset.pkl</span><br>
+        Used for Polymer identity and Sample_ID; SMILES for each polymer are also hardcoded internally as a fallback
+      </td>
+      <td>
+        <span class="chip chip-out">morgan_fingerprints.pkl</span><br>
+        720-row DataFrame: Polymer, Sample_ID, morgan_fp_00 … morgan_fp_63 (uint8 binary bits)<br><br>
+        <span class="chip chip-out">morgan_fingerprints.csv</span><br>
+        Same DataFrame as plain CSV
+      </td>
+      <td>
+        <ul class="print-list">
+          <li>OK RDKit detected — using genuine ECFP4 Morgan fingerprints</li>
+          <li class="warn">!! RDKit not installed — using chemistry-anchored mock fingerprints</li>
+          <li class="info">Computing ECFP4 fingerprints (radius=2, nBits=64) for 3 polymers</li>
+          <li class="info">[Polymer] ON bits: N / 64 (density = X.XXX) hex: [hexstring]</li>
+          <li class="info">Fingerprint report: SMILES, ON bits, OFF bits, density, hex, bit grid per polymer</li>
+          <li class="info">Tanimoto Similarity Matrix (pairwise) + chemical interpretation</li>
+          <li>Schema verified: 720 rows × 66 cols</li>
+          <li class="save">Saved: morgan_fingerprints.pkl → (loaded by task4_output_management.py)</li>
+          <li class="info">CSV format / Bit cols: morgan_fp_00 ... morgan_fp_63 / Merge key: [Polymer, Sample_ID]</li>
+        </ul>
+      </td>
+      <td>
+        <ul class="fn-list">
+          <li class="fn-item"><div class="fn-name">compute_morgan_fingerprint_rdkit(smiles)</div><div class="fn-desc">Uses RDKit AllChem.GetMorganFingerprintAsBitVect at radius=2, 64 bits, returns a NumPy uint8 array</div></li>
+          <li class="fn-item"><div class="fn-name">_mock_morgan_fingerprint(polymer_name)</div><div class="fn-desc">Deterministic fallback: generates chemically-grounded mock fingerprint vectors when RDKit is unavailable</div></li>
+          <li class="fn-item"><div class="fn-name">compute_morgan_fingerprint(polymer_name, smiles)</div><div class="fn-desc">Dispatcher — routes to RDKit or mock implementation</div></li>
+          <li class="fn-item"><div class="fn-name">tanimoto_similarity(a, b)</div><div class="fn-desc">Computes Tanimoto (Jaccard) coefficient between two binary bit vectors: |A∩B| / |A∪B|</div></li>
+          <li class="fn-item"><div class="fn-name">build_morgan_dataframe(fp_dict)</div><div class="fn-desc">Broadcasts each polymer's single fingerprint vector to all 240 of its samples, assembles into a 720×66 DataFrame with Polymer and Sample_ID columns</div></li>
+          <li class="fn-item"><div class="fn-name">print_fingerprint_report(fp_dict)</div><div class="fn-desc">Displays boxed per-polymer summary: SMILES, bit density, hex representation, visual bit grid, ON-bit indices</div></li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TASK 6 -->
+<div class="task-card">
+  <div class="task-header">
+    <span class="task-num t6">TASK 6</span>
+    <span class="task-filename">task6_config.py</span>
+    <span class="task-purpose-short">Interactive export configuration tool</span>
+  </div>
+  <div class="scroll-wrap">
+  <table class="task-table">
+    <colgroup>
+      <col class="col-w-purpose">
+      <col class="col-w-inputs">
+      <col class="col-w-outputs">
+      <col class="col-w-prints">
+      <col class="col-w-funcs">
+    </colgroup>
+    <tr>
+      <th>Purpose</th>
+      <th>Inputs &amp; Contents</th>
+      <th>Outputs &amp; Contents</th>
+      <th>Key Print Statements</th>
+      <th>Functions</th>
+    </tr>
+    <tr>
+      <td class="purpose-text">Optional interactive CLI tool that lets the user customise how many features to export per block in the final CSVs. Ranks features within each block by mean within-class variance (most informative first), presents an interactive prompt, and saves the configuration. If this file is not run, task4 defaults to all features.</td>
+      <td>
+        <span class="chip chip-in">master_dataset.pkl</span> Used to rank structural, latent, physics features<br><br>
+        <span class="chip chip-in">morgan_fingerprints.pkl</span> (optional) Used to rank Morgan bits
+      </td>
+      <td>
+        <span class="chip chip-out">export_config.pkl</span><br>
+        Dict with: <b>chosen_n</b> (user-selected count per block), <b>selected_cols</b> (ranked column names per block), <b>block_defs</b> (label/max/default metadata), <b>total_features</b>, <b>total_columns</b>
+      </td>
+      <td>
+        <ul class="print-list">
+          <li>Loading master_dataset.pkl ...</li>
+          <li>✔ master_dataset.pkl loaded (720 rows)</li>
+          <li>✔ morgan_fingerprints.pkl loaded (720 rows)</li>
+          <li class="warn">⚠ morgan_fingerprints.pkl not found — Morgan block will use default ordering</li>
+          <li>Ranking features by within-class variance ...</li>
+          <li class="info">[block]: top feature = [feature_name]</li>
+          <li class="info">INTERACTIVE EXPORT CONFIGURATION — block summaries (available / default / max)</li>
+          <li class="info">EXPORT CONFIGURATION SUMMARY: per-block export count, % of max, CSV column range, top/last feature</li>
+          <li class="info">Total features: N | + 2 target cols | Total CSV cols: N</li>
+          <li class="save">💾 Saved: export_config.pkl → (read by task4_output_management.py)</li>
+          <li class="info">ℹ Run task4 to generate CSVs. Delete export_config.pkl to reset to defaults.</li>
+        </ul>
+      </td>
+      <td>
+        <ul class="fn-list">
+          <li class="fn-item"><div class="fn-name">rank_features_by_within_class_variance(df, feature_cols)</div><div class="fn-desc">Computes each feature's variance within each polymer class separately, takes the mean across classes, and returns features sorted highest to lowest. This avoids inflated ranking from between-class differences.</div></li>
+          <li class="fn-item"><div class="fn-name">rank_all_blocks(df, morgan_df)</div><div class="fn-desc">Applies within-class variance ranking to all four blocks (structural, latent, physics from master_df; Morgan from morgan_df). Returns a dict of ranked column lists.</div></li>
+          <li class="fn-item"><div class="fn-name">_ask_int(prompt, lo, hi, default)</div><div class="fn-desc">Validates integer CLI input within a range; returns default on empty Enter</div></li>
+          <li class="fn-item"><div class="fn-name">run_interactive_config(df, morgan_df, ranked)</div><div class="fn-desc">Displays block summaries and prompts the user for how many features to export from each block. Returns a dict of chosen counts.</div></li>
+          <li class="fn-item"><div class="fn-name">build_config(chosen, ranked)</div><div class="fn-desc">Constructs the full config dict: slices the top-N ranked columns per block, computes totals</div></li>
+          <li class="fn-item"><div class="fn-name">print_config_summary(config)</div><div class="fn-desc">Prints per-block export count, percentage of max, CSV column range, and first/last selected feature</div></li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TASK 7 -->
+<div class="task-card">
+  <div class="task-header">
+    <span class="task-num t7">TASK 7</span>
+    <span class="task-filename">task7_physics_check.py</span>
+    <span class="task-purpose-short">Physics validity check on synthetic data</span>
+  </div>
+  <div class="scroll-wrap">
+  <table class="task-table">
+    <colgroup>
+      <col class="col-w-purpose">
+      <col class="col-w-inputs">
+      <col class="col-w-outputs">
+      <col class="col-w-prints">
+      <col class="col-w-funcs">
+    </colgroup>
+    <tr>
+      <th>Purpose</th>
+      <th>Inputs &amp; Contents</th>
+      <th>Outputs &amp; Contents</th>
+      <th>Key Print Statements</th>
+      <th>Functions</th>
+    </tr>
+    <tr>
+      <td class="purpose-text">Validates that the synthetic dataset obeys real polymer physics. For each polymer, examines the top and bottom 5% of samples by Tg and Dk, then checks whether those extreme samples satisfy domain rules (e.g. low-Tg samples must have high FVF and low ChainRigidity). Produces PASS/WARN/FAIL verdicts used by task4's confidence scorer.</td>
+      <td>
+        <span class="chip chip-in">master_dataset.pkl</span><br>
+        720-row DataFrame; uses Tg_degC, Dk_1GHz as target columns plus all physics feature columns for rule evaluation
+      </td>
+      <td>
+        <span class="chip chip-out">physics_check_report.pkl</span><br>
+        List of 12 result dicts (3 polymers × 2 targets × 2 tails). Each dict: polymer, target, tail, n_extreme, threshold, percentile_pct, overall_pass_rate, and a <b>rules</b> list (each rule: feature, direction, poly_mean, extreme_mean, n_pass, n_total, pass_rate, status: PASS/WARN/FAIL)
+      </td>
+      <td>
+        <ul class="print-list">
+          <li>Loading master_dataset.pkl ...</li>
+          <li>✔ Loaded: master_dataset.pkl (720 rows)</li>
+          <li>Verifying synthetic data follows real polymer physics ...</li>
+          <li class="info">Examining top &amp; bottom 5% of samples by Tg and Dk</li>
+          <li>Checking [Polymer] ...</li>
+          <li class="info">Per-rule table: feature, direction, poly_mean, extreme_mean, pass_rate, PASS/WARN/FAIL</li>
+          <li class="info">Overall pass rate per polymer/target/tail</li>
+          <li class="info">GLOBAL SUMMARY table: Polymer | Target | Tail | N samples | Pass rate | Verdict</li>
+          <li class="info">Per-polymer physics confidence: N/4 checks VALID</li>
+          <li class="info">ℹ PASS threshold ≥ 60% | ThermalDiffusivity used as CoolingRate proxy | Rules probe top/bottom 5%</li>
+          <li class="save">💾 Saved: physics_check_report.pkl</li>
+        </ul>
+      </td>
+      <td>
+        <ul class="fn-list">
+          <li class="fn-item"><div class="fn-name">_check_rule(sample_val, poly_mean, direction)</div><div class="fn-desc">Atomic rule evaluator: returns True if sample satisfies "above_mean" or "below_mean" direction relative to the polymer's class mean</div></li>
+          <li class="fn-item"><div class="fn-name">check_target_rules(df, polymer, target_col, percentile_pct, tail, rules)</div><div class="fn-desc">Identifies the extreme tail of samples (top or bottom N%), computes polymer-wide feature means, evaluates each physics rule against those extremes, and returns a structured result dict with per-rule pass rates and an overall pass rate</div></li>
+          <li class="fn-item"><div class="fn-name">print_check_result(result)</div><div class="fn-desc">Prints a formatted rule-by-rule table with colour-coded PASS/WARN/FAIL status, poly_mean vs extreme_mean comparison</div></li>
+          <li class="fn-item"><div class="fn-name">print_global_summary(all_results)</div><div class="fn-desc">Prints a compact one-line-per-check summary table and a per-polymer verdict (N/4 checks VALID)</div></li>
+          <li class="fn-item"><div class="fn-name">_status_color / _status_icon</div><div class="fn-desc">Utility helpers mapping status strings to ANSI colour codes and icons (✔ / ~ / ✗)</div></li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ TASK 8 -->
+<div class="task-card">
+  <div class="task-header">
+    <span class="task-num t8">TASK 8</span>
+    <span class="task-filename">task8_unified_tanimoto_score.py</span>
+    <span class="task-purpose-short">Unified Morgan FP generation + detailed Tanimoto analysis</span>
+  </div>
+  <div class="scroll-wrap">
+  <table class="task-table">
+    <colgroup>
+      <col class="col-w-purpose">
+      <col class="col-w-inputs">
+      <col class="col-w-outputs">
+      <col class="col-w-prints">
+      <col class="col-w-funcs">
+    </colgroup>
+    <tr>
+      <th>Purpose</th>
+      <th>Inputs &amp; Contents</th>
+      <th>Outputs &amp; Contents</th>
+      <th>Key Print Statements</th>
+      <th>Functions</th>
+    </tr>
+    <tr>
+      <td class="purpose-text">Alternative/enhanced version of task5. Computes the same 64-bit ECFP4 fingerprints but adds a much richer Tanimoto analysis suite: pairwise scores with visual bar charts, a full similarity matrix, ranked similarity list, and chemical interpretation of structural overlap between polymer families. Produces the same output artifact as task5 so either can feed task4.</td>
+      <td>
+        <span class="chip chip-none">None (standalone)</span><br>
+        SMILES strings for all 3 polymers are hardcoded internally in <code>POLYMER_REGISTRY</code>. Does not read master_dataset.pkl at runtime.
+      </td>
+      <td>
+        <span class="chip chip-out">morgan_fingerprints.pkl</span><br>
+        Same schema as task5: 720-row DataFrame with Polymer, Sample_ID, and 64 binary ECFP4 bit columns (morgan_fp_00 … morgan_fp_63). Produces identical artifact to task5, making the two interchangeable for task4.
+      </td>
+      <td>
+        <ul class="print-list">
+          <li>RDKit detected — printing Morgan fingerprints data</li>
+          <li class="warn">!! RDKit not installed — using chemistry-anchored mock fingerprints</li>
+          <li class="info">Computing ECFP4 fingerprints (radius=2, nBits=64) for 3 polymers</li>
+          <li class="info">[Polymer] ON bits: N/64 (density=X.XXX) hex: [hexstring]</li>
+          <li class="info">Section 1 — Detailed per-polymer fingerprint card: SMILES, bit grid, hex, ON-bit indices</li>
+          <li class="info">Section 2a — Pairwise Tanimoto: |A∩B| / |A∪B|, score, visual bar, interpretation label</li>
+          <li class="info">Section 2b — Full N×N Tanimoto similarity matrix</li>
+          <li class="info">Section 2c — Ranked similarity list (High → Low)</li>
+          <li class="info">Section 2d — Chemical interpretation: shared substructures per pair</li>
+          <li>Schema verified: 720 rows × 66 cols</li>
+          <li class="save">Saved: morgan_fingerprints.pkl | Rows: 720 | Cols: 66</li>
+          <li class="info">Bits: morgan_fp_00 ... morgan_fp_63 | Key: [Polymer, Sample_ID]</li>
+        </ul>
+      </td>
+      <td>
+        <ul class="fn-list">
+          <li class="fn-item"><div class="fn-name">compute_morgan_fingerprint_rdkit(smiles)</div><div class="fn-desc">RDKit ECFP4 at radius=2, 64 bits — same implementation as task5</div></li>
+          <li class="fn-item"><div class="fn-name">_mock_morgan_fingerprint(polymer_name)</div><div class="fn-desc">Chemistry-anchored mock fingerprint fallback when RDKit is absent</div></li>
+          <li class="fn-item"><div class="fn-name">compute_morgan_fingerprint(polymer_name, smiles)</div><div class="fn-desc">Dispatcher to RDKit or mock</div></li>
+          <li class="fn-item"><div class="fn-name">tanimoto_similarity(a, b)</div><div class="fn-desc">Computes Tanimoto coefficient between two binary arrays</div></li>
+          <li class="fn-item"><div class="fn-name">interpret_tanimoto(score)</div><div class="fn-desc">Maps score ranges to human-readable labels (e.g. "Highly similar", "Moderate overlap", "Structurally distinct")</div></li>
+          <li class="fn-item"><div class="fn-name">bits_to_hex(fp)</div><div class="fn-desc">Converts binary fingerprint array to a compact hex string</div></li>
+          <li class="fn-item"><div class="fn-name">format_bit_grid(fp, cols=16)</div><div class="fn-desc">Formats the 64-bit vector as a printable visual grid with configurable column width</div></li>
+          <li class="fn-item"><div class="fn-name">print_fingerprint_report(fp_dict)</div><div class="fn-desc">Renders detailed boxed per-polymer cards with SMILES, bit density, hex, bit grid, and ON-bit index list</div></li>
+          <li class="fn-item"><div class="fn-name">print_tanimoto_report(fp_dict)</div><div class="fn-desc">Four-section analysis: pairwise scores with ASCII bars, full similarity matrix, ranked list, chemical interpretation of structural overlap</div></li>
+          <li class="fn-item"><div class="fn-name">build_morgan_dataframe(fp_dict)</div><div class="fn-desc">Broadcasts per-polymer fingerprints to 240 samples each, assembles 720×66 DataFrame</div></li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+  </div>
+</div>
+
+</body>
+</html>

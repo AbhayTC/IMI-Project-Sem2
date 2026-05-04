@@ -1,0 +1,55 @@
+Final Outcome: Create an AI Model that when deployed allows the user to input a SMILES (Simplified Molecular Input Line Entry System) structure. And displays SMILES string along with the structure of a different polymer (The output polymer calculation will be done in the process part). Also displaying in a tabular manner the difference in the glass_transition_temperature, dielectric_constant, total_mass_loss of the output polymer and the input polymer. 
+
+Input: The user will enter the SMILES structure of a polymer. 
+
+Process: 
+Take the input SMILES, create a csv dataset with all the features obtained from the SMILES structure. Use RDkit, polyBERT and MorganFingerprints to extract more features. Total there should be about 400 features. 
+Add calculated variance to each of these features (Add variance in such a way that each of the samples has an proper SMILES structure relevant to it). Having a total of 200 samples (Datapoints). The tanimoto_score of the samples should be within 0.85 - 0.98. 
+
+Suggest some tools that I can use, such as GenAI. 
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+├── step1_data_curation/                    # Data Curation and Standardization
+│   ├── sourcing.py                         # Gather SMILES–property pairs from PoLyInfo, PI1M, Materials Project
+│   ├── sanitization.py                     # Canonicalize SMILES strings via RDKit
+│   └── unit_conversion.py                  # Standardize units (e.g., MPa), remove outliers
+│
+├── step2_feature_extraction/               # The Representation Layer
+│   ├── explicit_features.py                # RDKit 2D descriptors, topological indices, Morgan fingerprints
+│   ├── implicit_embeddings.py              # polyBERT transformer → 600-dim dense embedding vectors
+│   └── graph_construction.py              # SMILES → adjacency & node feature matrices for GNN
+│
+├── step3_architecture_selection/           # Model Architecture Selection
+│   ├── mlp_model.py                        # Feed-forward MLP for flat concatenated feature vectors
+│   ├── gnn_model.py                        # GCN / MPNN for graph-structured molecular input
+│   └── ensemble_baseline.py               # Random Forest / XGBoost baseline for tabular features
+│
+├── step4_training/                         # Training and Regularization
+│   ├── data_splitting.py                   # Scaffold splitting → train / val / test sets
+│   ├── loss_functions.py                   # MSE / MAE regression loss computation
+│   └── regularization.py                   # Dropout layers, early stopping, weight decay (L2)
+│
+├── step5_validation/                       # Validation and Uncertainty Quantification
+│   ├── parity_plots.py                     # Predicted vs. actual scatter (45° diagonal check)
+│   ├── metrics.py                          # R², test MAE / RMSE evaluation
+│   └── uncertainty.py                      # Monte Carlo Dropout / deep ensemble confidence intervals
+│
+├── step6_generative_loop/                  # Integration into Inverse Design Pipeline
+│   ├── surrogate_oracle.py                 # Frozen surrogate deployed as property evaluator
+│   └── reward_signal.py                    # Scaled surrogate output → RL agent reward signal
+│
+└── surrogate_model.pkl                     # Serialized trained surrogate (frozen weights)

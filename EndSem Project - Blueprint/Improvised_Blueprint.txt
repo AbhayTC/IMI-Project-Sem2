@@ -1,0 +1,382 @@
+=========================================================
+   INVERSE DESIGN MVP — FINAL INTEGRATED BLUEPRINT
+=========================================================
+Version: 1.1 (Suggestions Integrated)
+Audience: Internal Research (adjust UI section if demoing externally)
+---------------------------------------------------------
+ 
+ 
+PHASE 1: SYNTHETIC DATA & ENVIRONMENT PREP
+===========================================
+ 
+SETUP
+-----
+[ ] 1. Install required libraries:
+        pip install rdkit scikit-learn pandas numpy streamlit
+ 
+[ ] 2. Create file: generate_training_data.py
+ 
+LOGIC
+-----
+[ ] 3. Define 3–4 base polymer repeating units (e.g., PEEK, Polyimide)
+        as starting SMILES strings.
+ 
+[ ] 4. Build a mutation loop:
+        - Randomly apply chemical mutations (Fluorine, Chlorine, Methyl
+          groups) to pendant groups ONLY (not backbone) for consistency.
+        - Validate each mutated structure with RDKit.
+        - Discard invalid structures and duplicates.
+ 
+[ ] 5. Apply chemically directional "fake physics" rules per molecule:
+        (These must be directionally correct to avoid spurious learning.)
+ 
+        Structural inputs to calculate first:
+          - Molecular Weight (MolWt)
+          - Number of Aromatic Rings (NumRings)
+          - Number of Halogens (NumHalogens)
+ 
+        Target property formulas:
+          Tg         = base_Tg
+                       + k1 * NumRings
+                       + k2 * MolWt
+                       + k3 * NumHalogens        ← halogens INCREASE Tg
+                       + gaussian_noise(sigma=5)
+ 
+          Dielectric = base_Dielectric
+                       - k4 * NumHalogens         ← halogens DECREASE dielectric
+                       - k5 * NumRings
+                       + gaussian_noise(sigma=0.1)
+ 
+          Mass_Loss  = base_MassLoss
+                       - k6 * NumRings            ← rings IMPROVE thermal stability
+                       - k7 * NumHalogens
+                       + gaussian_noise(sigma=1)
+ 
+        Note: Choose k values that produce physically plausible ranges
+        (e.g., Tg: 150–400°C, Dielectric: 2.5–5.0, Mass Loss: 2–15%).
+ 
+[ ] 6. TARGET: Generate a CSV with 3,000 diverse samples.
+        Columns: [SMILES, Tg, Dielectric, Mass_Loss]
+        Rationale: 3,000 samples is the minimum safe threshold for a
+        240-feature input space with random forests.
+ 
+OUTPUT
+------
+        training_data.csv  (3,000 rows x 4 columns)
+ 
+ 
+---------------------------------------------------------
+ 
+ 
+PHASE 2: THE GENERATION ENGINE (CANDIDATE POOL)
+================================================
+ 
+[ ] 1. Create file: mutation_generator.py
+ 
+[ ] 2. Accept input: a starting polymer SMILES string (from user).
+ 
+[ ] 3. Apply chemical mutations to PENDANT GROUPS ONLY:
+        - Target substitution sites: H replacements, end-group swaps.
+        - Mutations: add/remove F, Cl, CH3, OH, CN groups.
+        - Validate every candidate with RDKit before keeping it.
+ 
+[ ] 4. Apply the Tanimoto Filter:
+        - Calculate Morgan Fingerprints (radius=2) for input + candidates.
+        - RULE: Morgan Fingerprints are used HERE for similarity filtering ONLY.
+          They must NOT appear in the Phase 3 feature vector.
+        - Keep candidates with Tanimoto score between 0.80 and 0.98.
+          (Lower bound relaxed from 0.85 to avoid pipeline bottlenecks.)
+ 
+[ ] 5. Candidate pool size:
+        - N is a CONFIGURABLE PARAMETER (default: 500).
+        - Do NOT hardcode a fixed number.
+        - Collect up to N passing candidates; proceed with however many pass.
+        - MINIMUM THRESHOLD: If fewer than 200 candidates pass filtering,
+          raise a warning and halt:
+          "Only X candidates found. Consider relaxing the Tanimoto lower
+           bound or trying a different base SMILES."
+ 
+[ ] 6. OFFLINE VALIDATION (do this before building the full pipeline):
+        - Run the mutation loop on one test SMILES.
+        - Plot the Tanimoto distribution of generated candidates.
+        - Confirm the 0.80–0.98 band yields at least 200+ candidates.
+        - Adjust mutation aggressiveness if needed.
+ 
+OUTPUT
+------
+        candidates.csv  (up to N rows, 1 column: SMILES)
+ 
+ 
+---------------------------------------------------------
+ 
+ 
+PHASE 3: FEATURE EXTRACTION (240 FEATURES)
+===========================================
+ 
+[ ] 1. Create file: feature_extractor.py
+ 
+[ ] 2. This pipeline runs on BOTH:
+        - training_data.csv (Phase 1 output)
+        - candidates.csv    (Phase 2 output)
+ 
+[ ] 3. Compile exactly 240 features per molecule using this breakdown:
+ 
+        A. RDKit 2D Structural Descriptors (~120 features)
+           - MolWt, NumRings, NumAromaticRings, NumHeteroatoms,
+             NumHalogens, NumRotatableBonds, TPSA, LogP,
+             NumHBD, NumHBA, FractionCSP3, BalabanJ, BertzCT, etc.
+           - Use rdkit.Chem.Descriptors and rdkit.Chem.rdMolDescriptors.
+           - These are fast, deterministic, and require no extra model.
+ 
+        B. polyBERT Embedding Slice (~80 features)
+           - Load the polyBERT transformer model locally.
+           - Extract the CLS token embedding and take the first 80 dims.
+           - FALLBACK: If polyBERT is unavailable or too heavy for MVP
+             infrastructure, replace with RDKit Morgan Fingerprint BITS
+             (radius=2, 80 bits) used as learned features.
+             These are legitimate as features; they are only excluded
+             from the Tanimoto similarity check in Phase 2.
+ 
+        C. Physics-Based / Rule-Derived Features (~40 features)
+           - Re-derive the same structural inputs used in Phase 1
+             (MolWt, NumRings, NumHalogens) and add combinations:
+             e.g., Rings*MolWt, Halogens/MolWt, MolWt^2, etc.
+           - Include any domain-specific calculated properties relevant
+             to your polymer class.
+ 
+[ ] 4. STRICT RULE: Final feature vector must contain exactly 240 columns.
+        Add a validation assertion in the script.
+ 
+[ ] 5. Apply PCA AFTER full feature extraction:
+        - Reduce 240 features → 60–80 principal components.
+        - Fit PCA on training data only; transform candidates using
+          the same fitted PCA object.
+        - Save the fitted PCA as "pca_transformer.pkl".
+        - Rationale: Reduces noise and overfitting at 3,000-sample scale.
+ 
+OUTPUT
+------
+        train_features.csv      (3,000 rows x 80 PCA components)
+        candidate_features.csv  (N rows x 80 PCA components)
+        pca_transformer.pkl
+ 
+ 
+---------------------------------------------------------
+ 
+ 
+PHASE 4: THE EVALUATOR ENGINE (MACHINE LEARNING)
+=================================================
+ 
+[ ] 1. Create file: train_surrogate.py
+ 
+[ ] 2. Load train_features.csv (X) and training_data.csv targets (Y).
+        Y columns: [Tg, Dielectric, Mass_Loss]
+ 
+[ ] 3. Apply an 80/20 train/validation split (random_state=42).
+ 
+[ ] 4. Train THREE separate RandomForestRegressors, one per target:
+        - model_tg          → predicts Tg
+        - model_dielectric  → predicts Dielectric Constant
+        - model_mass_loss   → predicts Mass Loss
+ 
+        Rationale: Separate models allow independent hyperparameter
+        tuning per property in later versions. Multi-output RF fits
+        independent trees anyway — being explicit costs nothing.
+ 
+        Suggested starting hyperparameters:
+          n_estimators=200, max_features='sqrt', random_state=42
+ 
+[ ] 5. Evaluate on validation set. Print R² for each target.
+        GATE: If any target's R² < 0.75, print a clear warning:
+        "WARNING: Surrogate for [target] has R²=X. Do not trust
+         predictions until data quality or model is improved."
+ 
+[ ] 6. Implement uncertainty quantification (free with random forests):
+        - Collect predictions from all individual trees per candidate.
+        - Store mean (point estimate) and std deviation (confidence).
+        - Std deviation will be used to flag low-confidence candidates
+          in the UI.
+ 
+[ ] 7. Save all three models with timestamped filenames:
+        surrogate_tg_YYYYMMDD.pkl
+        surrogate_dielectric_YYYYMMDD.pkl
+        surrogate_massloss_YYYYMMDD.pkl
+        
+        Also maintain a plain-text pointer file "latest_models.txt"
+        listing the current active model filenames. Never overwrite
+        previous pkl files silently.
+ 
+OUTPUT
+------
+        surrogate_tg_YYYYMMDD.pkl
+        surrogate_dielectric_YYYYMMDD.pkl
+        surrogate_massloss_YYYYMMDD.pkl
+        pca_transformer.pkl
+        latest_models.txt
+        Printed R² validation report
+ 
+ 
+---------------------------------------------------------
+ 
+ 
+PHASE 5: THE MASTER PIPELINE
+=============================
+ 
+[ ] 1. Create file: run_inverse_design.py
+ 
+[ ] 2. Define a single callable function: run_pipeline(smiles, weights)
+        (This function will be imported by app.py in Phase 6.)
+ 
+[ ] 3. Pipeline logic flow:
+ 
+        STEP 1 — Receive input SMILES and user-defined property weights.
+ 
+        STEP 2 — Call mutation_generator.py:
+                  Generate up to N valid, Tanimoto-filtered candidates.
+                  If fewer than 200 pass, raise a descriptive error.
+ 
+        STEP 3 — Call feature_extractor.py:
+                  Convert candidate SMILES → 240 features → PCA (80 dims).
+                  Use the saved pca_transformer.pkl (fit on training data).
+ 
+        STEP 4 — Load models from latest_models.txt.
+                  Predict Tg, Dielectric, Mass_Loss for all candidates.
+                  Also extract per-tree std deviations for confidence bands.
+ 
+        STEP 5 — Score each candidate using weighted scoring function:
+ 
+                  Normalize each property to [0, 1] across all candidates.
+                  Score = w1*(norm_Dielectric) 
+                        + w2*(1 - norm_Tg)          ← higher Tg = better
+                        + w3*(norm_Mass_Loss)
+ 
+                  Weights w1, w2, w3 are user-defined (sum to 1.0).
+                  Lower score = better candidate overall.
+ 
+        STEP 6 — Flag any candidate where any target's std deviation
+                  exceeds a threshold as LOW CONFIDENCE in the output.
+ 
+        STEP 7 — Return:
+                  - Top candidate SMILES
+                  - Full ranked results dataframe
+                  - Input polymer's predicted properties (for delta display)
+                  - Confidence flags per candidate
+ 
+OUTPUT
+------
+        results_dataframe (in memory, passed to app.py)
+ 
+ 
+---------------------------------------------------------
+ 
+ 
+PHASE 6: THE PRESENTATION LAYER (USER INTERFACE)
+=================================================
+ 
+[ ] 1. Create file: app.py
+ 
+[ ] 2. Import streamlit and run_pipeline() from run_inverse_design.py.
+ 
+[ ] 3. Build the sidebar:
+        - Text input: "Enter Base Polymer SMILES"
+        - Three sliders (w1, w2, w3) labeled:
+            "Weight: Low Dielectric Constant"
+            "Weight: High Thermal Stability (Tg)"
+            "Weight: Low Mass Loss"
+          Auto-normalize so w1 + w2 + w3 = 1.0.
+        - "Run Optimization" button.
+ 
+[ ] 4. On button press, call run_pipeline(smiles, weights).
+        Show a spinner during computation.
+ 
+[ ] 5. Handle errors gracefully:
+        - Invalid SMILES → "Please enter a valid polymer SMILES string."
+        - Too few candidates → display the pipeline warning message.
+        - Model file missing → "Model not found. Please run
+          train_surrogate.py first."
+ 
+[ ] 6. Display results:
+ 
+        A. Top section — Plain English Verdict (one line):
+           "Best candidate improves Dielectric by 18%, maintains Tg
+            within 12°C of input, and reduces Mass Loss by 6%."
+ 
+        B. Structure Panel — Side-by-side 2D drawings:
+           - Use RDKit to generate 2D images of input and top candidate.
+           - Display with st.image().
+           - Add captions explaining bracket notation for polymer SMILES
+             (for non-expert readers).
+           - Label clearly: "Input Polymer" | "Optimized Candidate"
+ 
+        C. Property Delta Table:
+           - Use st.dataframe() with columns:
+             [Property, Input Value, Optimized Value, Change (%)]
+           - Use plain labels: "Thermal Stability (°C)", 
+             "Dielectric Constant", "Thermal Mass Loss (%)"
+ 
+        D. Full Results Table:
+           - Ranked dataframe of all candidates with predicted properties
+             and confidence flags.
+           - LOW CONFIDENCE candidates highlighted or labeled.
+           - st.download_button() to export as CSV.
+             Label: "Download Full Results (.csv)"
+ 
+[ ] 7. If audience is external / demo mode, add:
+        - Hide raw SMILES strings behind an expandable "Advanced" section.
+        - Use more visual color coding (green = improved, red = worse).
+ 
+[ ] 8. Test: Run "streamlit run app.py" and validate end-to-end with
+        at least two different input SMILES before considering MVP done.
+ 
+ 
+---------------------------------------------------------
+ 
+ 
+FILE MAP SUMMARY
+================
+ 
+  generate_training_data.py   → Phase 1: synthetic dataset generation
+  mutation_generator.py       → Phase 2: candidate SMILES generation
+  feature_extractor.py        → Phase 3: 240-feature + PCA pipeline
+  train_surrogate.py          → Phase 4: RF model training + validation
+  run_inverse_design.py       → Phase 5: master pipeline function
+  app.py                      → Phase 6: Streamlit UI
+ 
+  training_data.csv           → 3,000-row synthetic dataset
+  candidates.csv              → filtered candidate SMILES pool
+  train_features.csv          → PCA-reduced training features
+  candidate_features.csv      → PCA-reduced candidate features
+  pca_transformer.pkl         → fitted PCA object (shared across runs)
+  surrogate_tg_YYYYMMDD.pkl
+  surrogate_dielectric_YYYYMMDD.pkl
+  surrogate_massloss_YYYYMMDD.pkl
+  latest_models.txt           → pointer to active model files
+ 
+ 
+---------------------------------------------------------
+ 
+ 
+KEY RULES (DO NOT VIOLATE)
+===========================
+ 
+  1. Morgan Fingerprints → Tanimoto filtering ONLY (Phase 2).
+     They must NOT appear in the 240-feature vector (Phase 3).
+ 
+  2. PCA must be fit on TRAINING DATA only.
+     Candidates are transformed using the saved pca_transformer.pkl.
+ 
+  3. If validation R² < 0.75 for any target, the surrogate is
+     not production-ready. Fix data or model before using results.
+ 
+  4. Never overwrite .pkl files silently. Always timestamp + pointer.
+ 
+  5. Never let the pipeline proceed silently with fewer than
+     200 candidates. Surface the warning explicitly.
+ 
+  6. Fake physics rules must be chemically directionally correct:
+     halogens increase Tg, halogens decrease dielectric,
+     rings improve thermal stability.
+ 
+=========================================================
+END OF BLUEPRINT
+=========================================================
